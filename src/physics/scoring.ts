@@ -52,6 +52,8 @@ export interface BerthCompletionReport {
   incidents: ScoreIncident[];
 }
 
+export const MAX_DAMAGE_GAME_OVER_USD = 10_000;
+
 export class DockingScorer {
   private baseScore = 1000;
   private penalties = 0;
@@ -82,6 +84,10 @@ export class DockingScorer {
 
   public getRepairCostUsd(): number {
     return Math.round(this.repairCostUsd);
+  }
+
+  public isGameOverDamage(): boolean {
+    return this.getRepairCostUsd() > MAX_DAMAGE_GAME_OVER_USD;
   }
 
   public getBareHullScrapesCount(): number {

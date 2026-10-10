@@ -103,6 +103,7 @@ export interface SimulationSnapshot {
   currentTrail: GhostPoint[];
   bestGhostTrail: GhostPoint[];
   completionReport: BerthCompletionReport | null;
+  gameOver: boolean;
 }
 
 interface ColliderMeta {
@@ -145,9 +146,11 @@ export class MarinaPhysicsWorld {
   private ghostTrailsByStage = new Map<string, GhostPoint[]>();
   private lastTrailRecordSec = 0;
   private completionReport: BerthCompletionReport | null = null;
+  private gameOver = false;
 
   public onIncident?: (incident: ScoreIncident) => void;
   public onComplete?: (report: BerthCompletionReport) => void;
+  public onGameOver?: (repairCostUsd: number, incidents: ReadonlyArray<ScoreIncident>) => void;
 
   public static async create(): Promise<MarinaPhysicsWorld> {
     await RAPIER.init();
@@ -197,6 +200,7 @@ export class MarinaPhysicsWorld {
     this.currentTrail = [{ x: config.startX, y: config.startY, headingRad: config.startHeadingRad }];
     this.lastTrailRecordSec = 0;
     this.completionReport = null;
+    this.gameOver = false;
     this.scorer.reset();
 
     if (this.rapierWorld) {
@@ -474,12 +478,19 @@ export class MarinaPhysicsWorld {
   }
 
   public stepFrame(frameDtSec: number): SimulationSnapshot {
+    if (this.completionReport || this.gameOver) {
+      return this.getSnapshot();
+    }
+
     const clampedFrameDt = Math.min(0.05, Math.max(0, frameDtSec));
     this.accumulator += clampedFrameDt;
 
     while (this.accumulator >= FIXED_DT) {
       this.stepPhysicsSubstep(FIXED_DT);
       this.accumulator -= FIXED_DT;
+      if (this.completionReport || this.gameOver) {
+        break;
+      }
     }
 
     return this.getSnapshot();
@@ -629,6 +640,16 @@ export class MarinaPhysicsWorld {
     // Step Rapier2D WASM rigid-body collision world & evaluate contacts
     this.rapierWorld.step(this.eventQueue);
     this.processContacts(dt);
+
+    // Trigger GAME OVER immediately if cumulative repair bill exceeds $10,000
+    if (!this.gameOver && this.scorer.isGameOverDamage()) {
+      this.gameOver = true;
+      this.controls = { throttle: 0, helm: 0, bowThruster: 0 };
+      this.playerBody.setLinvel({ x: 0, y: 0 }, true);
+      this.playerBody.setAngvel(0, true);
+      this.onGameOver?.(this.scorer.getRepairCostUsd(), this.scorer.getIncidents());
+      return;
+    }
 
     // Record Ghost Wake Breadcrumb every 0.25s
     if (this.elapsedSec - this.lastTrailRecordSec >= 0.25) {
@@ -894,6 +915,7 @@ export class MarinaPhysicsWorld {
       currentTrail: this.currentTrail,
       bestGhostTrail: this.ghostTrailsByStage.get(stageKey) ?? [],
       completionReport: this.completionReport,
+      gameOver: this.gameOver,
     };
   }
 }

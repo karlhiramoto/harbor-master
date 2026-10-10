@@ -251,4 +251,43 @@ describe('Real-Life Marine Physics & 4-Fender Scoring Suite', () => {
     expect(indexCssRaw).toContain('flex: 1;');
     expect(indexCssRaw).toContain('min-width: 0;');
   });
+
+  it('Triggers GAME OVER and cuts engine controls to Neutral when repair bill exceeds $10,000', async () => {
+    const world = await MarinaPhysicsWorld.create();
+    let reportedGameOverUsd: number | null = null;
+    world.onGameOver = (usd) => {
+      reportedGameOverUsd = usd;
+    };
+
+    // Accumulate bare-hull scrapes until cumulative damage exceeds $10,000
+    world.setControls({ throttle: 0.85, helm: 0.2 });
+    world.scorer.evaluateContact(1.5, {
+      playerKind: 'bare-hull',
+      otherKind: 'moored-hull',
+      otherLabel: 'Neighbor Yacht 1',
+      impactSpeedKnots: 1.5,
+      worldX: 0,
+      worldY: 0,
+      dtSec: 1 / 60,
+    });
+    expect(world.scorer.isGameOverDamage()).toBe(false);
+
+    world.scorer.evaluateContact(3.0, {
+      playerKind: 'bare-hull',
+      otherKind: 'moored-hull',
+      otherLabel: 'Neighbor Yacht 1',
+      impactSpeedKnots: 2.0,
+      worldX: 0,
+      worldY: 0,
+      dtSec: 1 / 60,
+    });
+    expect(world.scorer.getRepairCostUsd()).toBeGreaterThan(10_000);
+    expect(world.scorer.isGameOverDamage()).toBe(true);
+
+    const snap = world.stepFrame(0.05);
+    expect(snap.gameOver).toBe(true);
+    expect(reportedGameOverUsd).toBeGreaterThan(10_000);
+    expect(snap.controls.throttle).toBe(0);
+    expect(snap.controls.helm).toBe(0);
+  });
 });

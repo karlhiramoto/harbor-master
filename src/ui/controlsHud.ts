@@ -359,7 +359,11 @@ export class ControlsHud {
     this.scoreValEl.textContent = `${snap.liveScore}`;
     this.repairValEl.textContent = `$${snap.repairCostUsd.toLocaleString('en-US')}`;
     this.repairValEl.className =
-      snap.repairCostUsd === 0 ? 'stat-value good' : 'stat-value danger';
+      snap.repairCostUsd === 0
+        ? 'stat-value good'
+        : snap.repairCostUsd >= 7000
+          ? 'stat-value danger'
+          : 'stat-value warn';
 
     const dirPrefix = snap.telemetry.surgeKnots < -0.08 ? 'AST ' : '';
     this.speedValEl.textContent = `${dirPrefix}${snap.telemetry.speedKnots.toFixed(1)} kn`;
@@ -401,7 +405,7 @@ export class ControlsHud {
 
     // Live 3-Step Docking Checklist & Dual-Mode Completion Status
     const chk = snap.dockingChecklist;
-    if (chk.nearBerth && !snap.completionReport) {
+    if (chk.nearBerth && !snap.completionReport && !snap.gameOver) {
       this.berthStatusEl.style.display = 'block';
       const c1 = chk.inBerthZone ? '✓ In Slip' : '○ Enter Slip Box';
       const c2 = chk.headingAligned
@@ -656,6 +660,48 @@ export class ControlsHud {
     });
     const chooseBtn = btn('All Stages', 'hud-btn', () => this.openSetupModal());
     actionRow.append(replayBtn, chooseBtn);
+
+    card.append(title, sub, actionRow);
+    backdrop.append(card);
+    this.modalHostEl.append(backdrop);
+  }
+
+  public showGameOverModal(
+    repairCostUsd: number,
+    incidents: ReadonlyArray<ScoreIncident>
+  ): void {
+    this.modalHostEl.replaceChildren();
+    this.activeScorecardNextAction = null;
+
+    const backdrop = el('div', 'modal-backdrop');
+    const card = el('div', 'modal-card');
+    card.style.borderColor = 'var(--accent-coral)';
+
+    const title = el(
+      'h2',
+      'app-title',
+      `💥 GAME OVER — Damage Over $10,000 ($${repairCostUsd.toLocaleString('en-US')})`
+    );
+    title.style.color = 'var(--accent-coral)';
+
+    const latestCause = incidents[0] ? `Latest impact: ${incidents[0].label}. ` : '';
+    const sub = el(
+      'div',
+      'stat-label',
+      `${latestCause}Cumulative vessel hull & neighbor damage reached $${repairCostUsd.toLocaleString('en-US')}, exceeding the $10,000 marina insurance limit.`
+    );
+
+    const retryNow = () => {
+      this.activeScorecardNextAction = null;
+      this.modalHostEl.replaceChildren();
+      this.callbacks.onResetStage();
+    };
+    this.activeScorecardNextAction = retryNow;
+
+    const actionRow = el('div', 'top-actions');
+    const retryBtn = btn('↻ Retry Stage (Enter / R)', 'hud-btn primary', retryNow);
+    const chooseBtn = btn('Stages / Wind', 'hud-btn', () => this.openSetupModal());
+    actionRow.append(retryBtn, chooseBtn);
 
     card.append(title, sub, actionRow);
     backdrop.append(card);
