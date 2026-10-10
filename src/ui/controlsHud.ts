@@ -9,6 +9,7 @@ import {
 import { SimulationSnapshot } from '../physics/world';
 import { BerthCompletionReport, ScoreIncident } from '../physics/scoring';
 import { clampWindKnots, normalizeCompassDeg } from '../physics/hydrodynamics';
+import { ActiveArrowHighlights } from '../input/keyboardController';
 
 const STORAGE_KEY = 'marina_docking_progress_v1';
 
@@ -63,7 +64,9 @@ function saveStageCompletion(stageId: string, rank: SavedStageBest['rank'], scor
 
 export interface HudCallbacks {
   onThrottleChange: (throttle: number) => void;
+  onThrottleStep: (delta: number) => void;
   onHelmChange: (helm: number) => void;
+  onHelmStep: (delta: number) => void;
   onBowThrusterChange: (thruster: number) => void;
   onSelectFenderRig: (rig: FenderRigMode) => void;
   onToggleSpringLine: () => void;
@@ -97,6 +100,10 @@ export class ControlsHud {
   private readonly throttleKnobEl: HTMLElement;
   private readonly helmTrackEl: HTMLElement;
   private readonly helmKnobEl: HTMLElement;
+  private readonly keyUpBtn: HTMLButtonElement;
+  private readonly keyDownBtn: HTMLButtonElement;
+  private readonly keyLeftBtn: HTMLButtonElement;
+  private readonly keyRightBtn: HTMLButtonElement;
   private readonly thrusterRowEl: HTMLElement;
   private readonly lassoBtnEl: HTMLButtonElement;
   private readonly rigBtns = new Map<FenderRigMode, HTMLButtonElement>();
@@ -140,7 +147,8 @@ export class ControlsHud {
       const muted = this.callbacks.onToggleMute();
       muteBtn.textContent = muted ? 'Sound: Muted' : 'Sound: ON';
     });
-    actions.append(stagesBtn, retryBtn, xrayBtn, muteBtn);
+    const helpBtn = btn('? Help (H)', 'hud-btn', () => this.openHelpModal());
+    actions.append(stagesBtn, retryBtn, xrayBtn, muteBtn, helpBtn);
     topBar.append(brandGroup, strip, actions);
 
     // Center Live Briefing & Incident Callout Banner
@@ -150,22 +158,34 @@ export class ControlsHud {
     this.toastEl.style.opacity = '0';
     bannerZone.append(this.briefingEl, this.toastEl);
 
-    // Bottom Dual-Thumb Controls Dock
+    // Bottom Dual-Thumb + Arrow Key Controls Dock
     const bottomDock = el('div', 'hud-bottom-dock');
 
-    // 1. Left Throttle Telegraph Lever
+    // 1. Left Throttle Telegraph Lever + ↑ / ↓ Key Steppers
     const throttleCard = el('div', 'throttle-card');
-    const throttleLbl = el('span', 'stat-label', 'Throttle (W/S)');
+    const throttleLbl = el('span', 'stat-label', 'Throttle (↑/↓ · W/S)');
+    this.keyUpBtn = btn('▲', 'key-cap-btn', () => this.callbacks.onThrottleStep(0.1));
+    this.keyUpBtn.title = 'Increase Forward Throttle (Up Arrow / W)';
+
     this.throttleTrackEl = el('div', 'throttle-track');
     this.throttleTrackEl.id = 'throttle-lever-track';
     const centerLine = el('div', 'throttle-center-line');
     this.throttleKnobEl = el('div', 'throttle-knob', 'N');
     this.throttleTrackEl.append(centerLine, this.throttleKnobEl);
 
-    const stopBtn = btn('NEUTRAL', 'hud-btn', () => {
+    this.keyDownBtn = btn('▼', 'key-cap-btn', () => this.callbacks.onThrottleStep(-0.1));
+    this.keyDownBtn.title = 'Decrease / Reverse Throttle (Down Arrow / S)';
+
+    const stopBtn = btn('NEUTRAL (Space)', 'hud-btn', () => {
       this.callbacks.onThrottleChange(0);
     });
-    throttleCard.append(throttleLbl, this.throttleTrackEl, stopBtn);
+    throttleCard.append(
+      throttleLbl,
+      this.keyUpBtn,
+      this.throttleTrackEl,
+      this.keyDownBtn,
+      stopBtn
+    );
 
     // 2. Center Seamanship Utility Bar (4-Fender Rig Presets + Cleat Lasso + Camera)
     const centerBar = el('div', 'center-utility-bar');
@@ -200,7 +220,7 @@ export class ControlsHud {
 
     centerBar.append(rigGroup, this.lassoBtnEl, camBtn, zoomOutBtn, zoomInBtn);
 
-    // 3. Right Helm Wheel & Proportional Bow Thruster Rocker
+    // 3. Right Helm Wheel + ◀ / ▶ Arrow Steppers & Bow Thruster Rocker
     const helmCluster = el('div', 'helm-cluster');
     this.thrusterRowEl = el('div', 'thruster-row');
     const btPortBtn = el('button', 'thruster-btn', '◀ BOW PORT (Q)');
@@ -209,18 +229,26 @@ export class ControlsHud {
     this.wireHoldButton(btStbdBtn, 1);
     this.thrusterRowEl.append(btPortBtn, btStbdBtn);
 
-    const helmLbl = el('span', 'stat-label', 'Helm / Rudder (A/D)');
+    const helmLbl = el('span', 'stat-label', 'Helm (←/→ · A/D)');
+    const helmRow = el('div', 'helm-row-with-keys');
+    this.keyLeftBtn = btn('◀', 'key-cap-btn', () => this.callbacks.onHelmStep(-0.14));
+    this.keyLeftBtn.title = 'Turn Helm Port / Left (Left Arrow / A)';
+
     this.helmTrackEl = el('div', 'helm-slider-track');
     this.helmTrackEl.id = 'helm-wheel-track';
     const helmCenterTick = el('div', 'helm-center-tick');
     this.helmKnobEl = el('div', 'helm-knob', '0°');
     this.helmTrackEl.append(helmCenterTick, this.helmKnobEl);
 
-    const centerHelmBtn = btn('Center Helm', 'hud-btn', () => {
+    this.keyRightBtn = btn('▶', 'key-cap-btn', () => this.callbacks.onHelmStep(0.14));
+    this.keyRightBtn.title = 'Turn Helm Starboard / Right (Right Arrow / D)';
+    helmRow.append(this.keyLeftBtn, this.helmTrackEl, this.keyRightBtn);
+
+    const centerHelmBtn = btn('Center Helm (C)', 'hud-btn', () => {
       this.callbacks.onHelmChange(0);
     });
 
-    helmCluster.append(this.thrusterRowEl, helmLbl, this.helmTrackEl, centerHelmBtn);
+    helmCluster.append(this.thrusterRowEl, helmLbl, helmRow, centerHelmBtn);
     bottomDock.append(throttleCard, centerBar, helmCluster);
 
     this.modalHostEl = el('div', 'modal-host');
@@ -253,7 +281,6 @@ export class ControlsHud {
       const rect = this.throttleTrackEl.getBoundingClientRect();
       const norm = 1 - ((clientY - rect.top) / rect.height) * 2;
       const clamped = Math.max(-1, Math.min(1, norm));
-      // Crisp Neutral center detent within +/- 0.08
       const snapped = Math.abs(clamped) < 0.08 ? 0 : clamped;
       this.callbacks.onThrottleChange(snapped);
     };
@@ -324,7 +351,7 @@ export class ControlsHud {
     }, 3100);
   }
 
-  public updateTelemetry(snap: SimulationSnapshot): void {
+  public updateTelemetry(snap: SimulationSnapshot, keyHighlights?: ActiveArrowHighlights): void {
     this.scoreValEl.textContent = `${snap.liveScore}`;
     this.repairValEl.textContent = `$${snap.repairCostUsd.toLocaleString('en-US')}`;
     this.repairValEl.className =
@@ -352,6 +379,14 @@ export class ControlsHud {
     const deg = Math.round(snap.telemetry.helmAngleDeg);
     this.helmKnobEl.textContent = deg === 0 ? '0°' : deg > 0 ? `${deg}°R` : `${Math.abs(deg)}°L`;
 
+    // Illuminate Arrow Key Caps live when pressed on keyboard
+    if (keyHighlights) {
+      this.keyUpBtn.classList.toggle('active', keyHighlights.up);
+      this.keyDownBtn.classList.toggle('active', keyHighlights.down);
+      this.keyLeftBtn.classList.toggle('active', keyHighlights.left);
+      this.keyRightBtn.classList.toggle('active', keyHighlights.right);
+    }
+
     // Show/hide Bow Thruster rocker for 8m Cruiser
     this.thrusterRowEl.style.display = snap.vesselSpec.hasBowThruster ? 'flex' : 'none';
 
@@ -374,6 +409,43 @@ export class ControlsHud {
       this.lassoBtnEl.classList.remove('attached');
       this.lassoBtnEl.disabled = true;
     }
+  }
+
+  public openHelpModal(): void {
+    if (this.modalHostEl.childElementCount > 0) {
+      this.modalHostEl.replaceChildren();
+      return;
+    }
+    const backdrop = el('div', 'modal-backdrop');
+    const card = el('div', 'modal-card');
+
+    const headerRow = el('div', 'brand-group');
+    headerRow.style.justifyContent = 'space-between';
+    headerRow.style.width = '100%';
+    headerRow.append(
+      el('h2', 'app-title', 'Controls & Marina Docking Guide'),
+      btn('Close (Esc)', 'hud-btn', () => this.modalHostEl.replaceChildren())
+    );
+
+    const grid = el('div', 'help-grid');
+    const items: Array<[string, string]> = [
+      ['↑ / ↓  or  W / S', 'Adjust Throttle Ahead / Astern (pauses safely on Neutral when crossing 0%).'],
+      ['← / →  or  A / D', 'Steer Helm Port / Starboard (tap for 5° nudge, hold to sweep wheel).'],
+      ['Space  ·  C', 'Space cuts Throttle to Neutral immediately; C centers Helm to 0°.'],
+      ['Q / E (8m Cruiser)', 'Fire Proportional Bow Thruster Port (Q) or Starboard (E) to walk sideways.'],
+      ['M  or  Tap Dock Cleat', 'Toss/cast off a Spring Line when within 4.3m of a glowing cleat to pivot against wind!'],
+      ['Bow / Mid / Aft Fenders', 'Slide your 2 Port & 2 Starboard fenders to shield bow stems or quarters from yacht scrapes!'],
+    ];
+
+    for (const [keys, desc] of items) {
+      const box = el('div', 'help-item');
+      box.append(el('strong', '', keys), el('span', 'stat-label', desc));
+      grid.append(box);
+    }
+
+    card.append(headerRow, grid);
+    backdrop.append(card);
+    this.modalHostEl.append(backdrop);
   }
 
   public openSetupModal(): void {
@@ -401,6 +473,7 @@ export class ControlsHud {
       const subLine = el('span', 'stat-label', st.subtitle);
       item.append(topLine, subLine);
       item.addEventListener('click', () => {
+        item.blur();
         this.currentStage = st;
         this.modalHostEl.replaceChildren();
         this.callbacks.onSelectCampaignStage(st);
@@ -494,6 +567,10 @@ export class ControlsHud {
     this.modalHostEl.append(backdrop);
   }
 
+  public closeAnyModal(): void {
+    this.modalHostEl.replaceChildren();
+  }
+
   public showCompletionModal(report: BerthCompletionReport): void {
     saveStageCompletion(this.currentStage.id, report.rank, report.finalScore);
     this.modalHostEl.replaceChildren();
@@ -555,7 +632,11 @@ function btn(label: string, className: string, onClick: () => void): HTMLButtonE
   b.type = 'button';
   b.className = className;
   b.textContent = label;
-  b.addEventListener('click', onClick);
+  b.addEventListener('click', () => {
+    // Release focus from HUD buttons immediately so keyboard Arrow Keys (↑/↓/←/→) never get intercepted!
+    b.blur();
+    onClick();
+  });
   return b;
 }
 

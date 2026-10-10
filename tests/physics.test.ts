@@ -11,6 +11,7 @@ import {
 } from '../src/physics/hydrodynamics';
 import { DockingScorer } from '../src/physics/scoring';
 import { MarinaPhysicsWorld } from '../src/physics/world';
+import { KeyboardController } from '../src/input/keyboardController';
 
 describe('Real-Life Marine Physics & 4-Fender Scoring Suite', () => {
   it('7m Outboard generates strong stern swing under vectored throttle vs minimal torque in Neutral', () => {
@@ -153,5 +154,42 @@ describe('Real-Life Marine Physics & 4-Fender Scoring Suite', () => {
     expect(snap.playerFenders).toHaveLength(4);
     expect(snap.liveScore).toBe(1000);
     expect(snap.playerX).toBeGreaterThan(-22);
+  });
+
+  it('Arrow keys adjust Throttle & Helm via immediate taps, Neutral zero-crossing guard, and continuous holds', () => {
+    const kb = new KeyboardController();
+    let prevented = false;
+    let controls = { throttle: 0, helm: 0, bowThruster: 0 };
+
+    // Tap ArrowUp -> immediate +10% Ahead throttle and preventDefault called
+    controls = kb.handleKeyDown(
+      { key: 'ArrowUp', preventDefault: () => (prevented = true) },
+      controls
+    ).nextControls;
+    expect(prevented).toBe(true);
+    expect(controls.throttle).toBeCloseTo(0.1, 2);
+    kb.handleKeyUp({ key: 'ArrowUp' });
+
+    // Stepping down with ArrowDown from +0.05 snaps cleanly to Neutral (0.0) without overshooting into Reverse
+    controls = kb.handleKeyDown({ key: 'ArrowDown' }, { throttle: 0.05, helm: 0, bowThruster: 0 }).nextControls;
+    expect(controls.throttle).toBe(0);
+    kb.handleKeyUp({ key: 'ArrowDown' });
+
+    // Second tap on ArrowDown from Neutral enters Reverse (-0.1)
+    controls = kb.handleKeyDown({ key: 'ArrowDown' }, controls).nextControls;
+    expect(controls.throttle).toBeCloseTo(-0.1, 2);
+    kb.handleKeyUp({ key: 'ArrowDown' });
+
+    // Hold ArrowRight -> initial helm step + smooth ramp after hold delay
+    controls = kb.handleKeyDown({ key: 'ArrowRight' }, controls).nextControls;
+    expect(controls.helm).toBeCloseTo(0.14, 2);
+    controls = kb.step(0.35, controls);
+    expect(controls.helm).toBeGreaterThan(0.35);
+
+    // KeyC centers helm to 0, Space cuts throttle to Neutral
+    controls = kb.handleKeyDown({ code: 'KeyC' }, controls).nextControls;
+    expect(controls.helm).toBe(0);
+    controls = kb.handleKeyDown({ code: 'Space' }, controls).nextControls;
+    expect(controls.throttle).toBe(0);
   });
 });
