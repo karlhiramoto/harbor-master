@@ -1,0 +1,21 @@
+{
+  "name": "marina-boat-docking",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Realistic 2D Marina Boat Docking Simulator with 3-DOF Fossen Hydrodynamics & Rapier2D WebAssembly Physics",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5173",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 4173",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@dimforge/rapier2d-compat": "^0.14.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.3"
+  }
+}

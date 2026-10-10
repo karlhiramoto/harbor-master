@@ -1,0 +1,485 @@
+:root {
+  --bg-harbor: #061f29;
+  --panel-bg: rgba(9, 32, 44, 0.86);
+  --panel-border: rgba(148, 163, 184, 0.24);
+  --text-main: #f1f5f9;
+  --text-muted: #94a3b8;
+  --accent-gold: #f59e0b;
+  --accent-cyan: #22d3ee;
+  --accent-emerald: #10b981;
+  --accent-coral: #ef4444;
+  --radius-md: 12px;
+  --radius-sm: 8px;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+html,
+body,
+#app-root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100dvh;
+  overflow: hidden;
+  background-color: var(--bg-harbor);
+  color: var(--text-main);
+  font-family: var(--font-sans);
+  touch-action: none;
+}
+
+.sim-shell {
+  position: relative;
+  width: 100%;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.marina-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: crosshair;
+}
+
+/* Top Nautical Telemetry Bar */
+.hud-top-bar {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: calc(8px + env(safe-area-inset-top, 0px)) 14px 8px 14px;
+  background: linear-gradient(180deg, rgba(6, 26, 36, 0.92) 0%, rgba(6, 26, 36, 0.65) 75%, transparent 100%);
+  pointer-events: auto;
+  flex-wrap: wrap;
+}
+
+.brand-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.app-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-main);
+}
+
+.stage-tag {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--accent-gold);
+  background: rgba(245, 158, 11, 0.14);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  padding: 3px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.telemetry-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.stat-chip {
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  display: flex;
+  flex-direction: column;
+  min-width: 72px;
+}
+
+.stat-label {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.stat-value {
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.stat-value.good {
+  color: var(--accent-emerald);
+}
+
+.stat-value.warn {
+  color: var(--accent-gold);
+}
+
+.stat-value.danger {
+  color: var(--accent-coral);
+}
+
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hud-btn {
+  background: var(--panel-bg);
+  color: var(--text-main);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  padding: 6px 11px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease, border-color 0.15s ease;
+}
+
+.hud-btn:hover {
+  background: rgba(30, 58, 76, 0.92);
+  border-color: rgba(226, 232, 240, 0.45);
+}
+
+.hud-btn:active {
+  transform: scale(0.97);
+}
+
+.hud-btn.primary {
+  background: var(--accent-gold);
+  color: #0f172a;
+  border-color: var(--accent-gold);
+}
+
+.hud-btn.active-toggle {
+  border-color: var(--accent-cyan);
+  color: var(--accent-cyan);
+}
+
+/* Live Briefing & Incident Callout Banner */
+.hud-banner-zone {
+  position: relative;
+  z-index: 9;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  pointer-events: none;
+}
+
+.briefing-bar {
+  background: rgba(8, 29, 40, 0.82);
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  padding: 5px 14px;
+  font-size: 0.78rem;
+  color: #e2e8f0;
+  max-width: min(760px, 94vw);
+  text-align: center;
+}
+
+.incident-toast {
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.incident-toast.kiss {
+  background: rgba(16, 185, 129, 0.92);
+  color: #022c22;
+}
+
+.incident-toast.bump {
+  background: rgba(245, 158, 11, 0.94);
+  color: #0f172a;
+}
+
+.incident-toast.scrape {
+  background: rgba(239, 68, 68, 0.95);
+  color: #ffffff;
+}
+
+/* Bottom Dual-Thumb Marine Controls */
+.hud-bottom-dock {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 14px calc(12px + env(safe-area-inset-bottom, 0px)) 14px;
+  pointer-events: none;
+}
+
+/* Left Throttle Telegraph Cluster */
+.throttle-card {
+  pointer-events: auto;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 104px;
+}
+
+.throttle-track {
+  position: relative;
+  width: 44px;
+  height: 146px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 22px;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.throttle-center-line {
+  position: absolute;
+  top: 50%;
+  left: 6px;
+  right: 6px;
+  height: 2px;
+  background: var(--accent-gold);
+  transform: translateY(-50%);
+}
+
+.throttle-knob {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  height: 28px;
+  top: 50%;
+  transform: translateY(-50%);
+  border-radius: 14px;
+  background: #f8fafc;
+  color: #0f172a;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45);
+}
+
+/* Center Quick Seamanship Utilities (Fender Rig + Spring Line + Camera) */
+.center-utility-bar {
+  pointer-events: auto;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-md);
+  padding: 7px 10px;
+}
+
+.rig-segment-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.lasso-btn {
+  background: rgba(245, 158, 11, 0.18);
+  color: var(--accent-gold);
+  border: 1px solid var(--accent-gold);
+}
+
+.lasso-btn.attached {
+  background: var(--accent-emerald);
+  color: #022c22;
+  border-color: var(--accent-emerald);
+}
+
+/* Right Helm Wheel & Bow Thruster Cluster */
+.helm-cluster {
+  pointer-events: auto;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 174px;
+}
+
+.thruster-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+}
+
+.thruster-btn {
+  flex: 1;
+  background: rgba(15, 23, 42, 0.9);
+  color: var(--accent-cyan);
+  border: 1px solid rgba(34, 211, 238, 0.4);
+  border-radius: var(--radius-sm);
+  padding: 7px 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.thruster-btn.pressing {
+  background: var(--accent-cyan);
+  color: #082f49;
+}
+
+.helm-slider-track {
+  position: relative;
+  width: 152px;
+  height: 44px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 22px;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.helm-center-tick {
+  position: absolute;
+  left: 50%;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  background: var(--accent-gold);
+  transform: translateX(-50%);
+}
+
+.helm-knob {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 36px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-radius: 18px;
+  background: #f8fafc;
+  color: #0f172a;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Modal Drawer Overlay (Campaign Selector, Sandbox Setup, & Scorecard) */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: rgba(3, 14, 21, 0.76);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.modal-card {
+  width: min(680px, 95vw);
+  max-height: 88dvh;
+  overflow-y: auto;
+  background: #0b2938;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 16px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.stage-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.stage-item-btn {
+  text-align: left;
+  background: rgba(15, 38, 52, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  color: var(--text-main);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stage-item-btn.selected {
+  border-color: var(--accent-gold);
+  background: rgba(245, 158, 11, 0.14);
+}
+
+.sandbox-controls-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  padding: 12px;
+  background: rgba(7, 22, 32, 0.65);
+  border-radius: var(--radius-sm);
+}
+
+.control-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 0.8rem;
+}
+
+@media (max-width: 720px) {
+  .app-title {
+    font-size: 0.88rem;
+  }
+  .stat-chip {
+    min-width: 60px;
+    padding: 3px 7px;
+  }
+  .briefing-bar {
+    font-size: 0.72rem;
+    padding: 4px 10px;
+  }
+  .throttle-track {
+    height: 118px;
+  }
+  .helm-cluster {
+    min-width: 144px;
+  }
+  .helm-slider-track {
+    width: 128px;
+  }
+}
