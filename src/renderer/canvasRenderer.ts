@@ -86,10 +86,10 @@ export class MarinaCanvasRenderer {
       this.canvas.height = targetH;
     }
 
-    // Fit full 66m x 46m marina comfortably on both portrait mobile and wide desktop
+    // Fit full 66m x 47m marina comfortably on both portrait mobile (360px+) and wide desktop
     const fitX = rect.width / 66;
     const fitY = rect.height / 47;
-    this.pixelsPerMeter = Math.max(8.5, Math.min(fitX, fitY)) * this.userZoom;
+    this.pixelsPerMeter = Math.max(5.5, Math.min(fitX, fitY)) * this.userZoom;
   }
 
   public screenToWorld(

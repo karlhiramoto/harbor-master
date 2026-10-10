@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 
 // TODO(security): Pure client-side static simulation app (no backend DB, user accounts, or file uploads).
 // Dev and preview servers are bound strictly to 127.0.0.1 with strict security headers.
@@ -28,5 +28,8 @@ export default defineConfig({
     assetsDir: 'assets',
     sourcemap: false,
     target: 'es2022',
+  },
+  test: {
+    css: true,
   },
 });

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import indexCssRaw from '../src/index.css?inline';
 import {
   VESSEL_SPECS,
   getVesselFenderMounts,
@@ -239,5 +240,15 @@ describe('Real-Life Marine Physics & 4-Fender Scoring Suite', () => {
       world.stepFrame(0.05); // 60 * 0.05s = 3.0s > 2.5s hold threshold
     }
     expect(world.getSnapshot().completionReport?.completed).toBe(true);
+  });
+
+  it('Keeps Helm Controls on-screen on vertical (portrait) mobile screens via 2-row CSS Grid layout', () => {
+    // Portrait / mobile rule must arrange .hud-bottom-dock in 2 rows:
+    // Row 1: .center-utility-bar spanning full width (1 / -1)
+    // Row 2: .throttle-card (col 1) + .helm-cluster (col 2, minmax(0, 1fr)) with fluid helm-slider-track
+    expect(indexCssRaw).toContain('grid-template-columns: auto minmax(0, 1fr);');
+    expect(indexCssRaw).toContain('grid-column: 1 / -1;');
+    expect(indexCssRaw).toContain('flex: 1;');
+    expect(indexCssRaw).toContain('min-width: 0;');
   });
 });

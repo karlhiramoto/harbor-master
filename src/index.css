@@ -527,25 +527,136 @@ body,
   font-size: 0.8rem;
 }
 
-@media (max-width: 720px) {
+@media (max-width: 768px), ((max-width: 900px) and (orientation: portrait)) {
+  .hud-top-bar {
+    padding: calc(6px + env(safe-area-inset-top, 0px)) 10px 6px 10px;
+    gap: 5px;
+  }
+
   .app-title {
-    font-size: 0.88rem;
+    font-size: 0.85rem;
   }
+
+  .stage-tag {
+    font-size: 0.7rem;
+    padding: 2px 7px;
+  }
+
+  .telemetry-strip {
+    gap: 5px;
+  }
+
   .stat-chip {
-    min-width: 60px;
-    padding: 3px 7px;
+    min-width: 56px;
+    padding: 2px 6px;
   }
-  .briefing-bar {
+
+  .stat-label {
+    font-size: 0.56rem;
+  }
+
+  .stat-value {
+    font-size: 0.78rem;
+  }
+
+  .top-actions {
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+
+  .top-actions .hud-btn {
+    padding: 4px 8px;
     font-size: 0.72rem;
+  }
+
+  .hud-banner-zone {
+    gap: 4px;
+    padding: 0 8px;
+  }
+
+  .briefing-bar {
+    font-size: 0.7rem;
     padding: 4px 10px;
   }
+
+  .berth-checklist-pill {
+    font-size: 0.68rem;
+    padding: 4px 10px;
+  }
+
+  /* Two-row portrait bottom dock: Row 1 = Seamanship strip, Row 2 = Throttle + Helm side-by-side */
+  .hud-bottom-dock {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: end;
+    gap: 8px;
+    padding: 6px max(10px, env(safe-area-inset-right, 10px))
+      calc(10px + env(safe-area-inset-bottom, 0px)) max(10px, env(safe-area-inset-left, 10px));
+  }
+
+  .center-utility-bar {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    width: 100%;
+    padding: 5px 8px;
+    gap: 4px;
+  }
+
+  .center-utility-bar .hud-btn {
+    padding: 4px 8px;
+    font-size: 0.72rem;
+  }
+
+  .throttle-card {
+    grid-column: 1;
+    grid-row: 2;
+    min-width: 0;
+    padding: 7px 8px;
+    gap: 5px;
+  }
+
   .throttle-track {
-    height: 118px;
+    width: 42px;
+    height: 92px;
   }
+
+  .throttle-card .hud-btn {
+    padding: 4px 7px;
+    font-size: 0.68rem;
+    white-space: nowrap;
+  }
+
   .helm-cluster {
-    min-width: 144px;
+    grid-column: 2;
+    grid-row: 2;
+    min-width: 0;
+    width: 100%;
+    padding: 7px 9px;
+    gap: 6px;
   }
+
+  .thruster-btn {
+    padding: 5px 4px;
+    font-size: 0.66rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .helm-row-with-keys {
+    width: 100%;
+    gap: 5px;
+  }
+
   .helm-slider-track {
-    width: 128px;
+    flex: 1;
+    width: auto;
+    min-width: 76px;
+    height: 42px;
+  }
+
+  .helm-cluster .hud-btn {
+    padding: 4px 9px;
+    font-size: 0.72rem;
   }
 }
