@@ -242,12 +242,13 @@ describe('Real-Life Marine Physics & 4-Fender Scoring Suite', () => {
     expect(world.getSnapshot().completionReport?.completed).toBe(true);
   });
 
-  it('Keeps Helm Controls on-screen on vertical (portrait) mobile screens via 2-row CSS Grid layout', () => {
-    // Portrait / mobile rule must arrange .hud-bottom-dock in 2 rows:
-    // Row 1: .center-utility-bar spanning full width (1 / -1)
-    // Row 2: .throttle-card (col 1) + .helm-cluster (col 2, minmax(0, 1fr)) with fluid helm-slider-track
-    expect(indexCssRaw).toContain('grid-template-columns: auto minmax(0, 1fr);');
-    expect(indexCssRaw).toContain('grid-column: 1 / -1;');
+  it('Isolates water canvas inside dedicated .canvas-viewport across Mobile Portrait & Landscape without overlapping boat controls', () => {
+    // Dedicated unobstructed water viewport area
+    expect(indexCssRaw).toContain('grid-area: viewport;');
+    // Mobile Portrait: dedicated top / viewport / utility / throttle+helm rows
+    expect(indexCssRaw).toContain("'throttle helm'");
+    // Mobile Landscape: 3-column split cockpit with left throttle rail, center unobstructed viewport, right helm rail
+    expect(indexCssRaw).toContain("'throttle viewport helm'");
     expect(indexCssRaw).toContain('flex: 1;');
     expect(indexCssRaw).toContain('min-width: 0;');
   });

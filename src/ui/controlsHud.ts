@@ -114,7 +114,7 @@ export class ControlsHud {
   private toastClearTimer: number | null = null;
   private activeScorecardNextAction: (() => void) | null = null;
 
-  constructor(container: HTMLElement, callbacks: HudCallbacks) {
+  constructor(container: HTMLElement, canvasViewportEl: HTMLElement, callbacks: HudCallbacks) {
     this.callbacks = callbacks;
 
     // Top Nautical Telemetry Strip
@@ -161,9 +161,7 @@ export class ControlsHud {
     this.toastEl = el('div', 'incident-toast');
     this.toastEl.style.opacity = '0';
     bannerZone.append(this.briefingEl, this.berthStatusEl, this.toastEl);
-
-    // Bottom Dual-Thumb + Arrow Key Controls Dock
-    const bottomDock = el('div', 'hud-bottom-dock');
+    canvasViewportEl.append(bannerZone);
 
     // 1. Left Throttle Telegraph Lever + ↑ / ↓ Key Steppers
     const throttleCard = el('div', 'throttle-card');
@@ -253,10 +251,16 @@ export class ControlsHud {
     });
 
     helmCluster.append(this.thrusterRowEl, helmLbl, helmRow, centerHelmBtn);
-    bottomDock.append(throttleCard, centerBar, helmCluster);
 
     this.modalHostEl = el('div', 'modal-host');
-    container.append(topBar, bannerZone, bottomDock, this.modalHostEl);
+    container.append(
+      topBar,
+      canvasViewportEl,
+      throttleCard,
+      centerBar,
+      helmCluster,
+      this.modalHostEl
+    );
 
     this.wireThrottleDrag();
     this.wireHelmDrag();

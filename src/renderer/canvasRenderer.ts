@@ -92,6 +92,22 @@ export class MarinaCanvasRenderer {
     this.pixelsPerMeter = Math.max(5.5, Math.min(fitX, fitY)) * this.userZoom;
   }
 
+  private getCameraWorldCenter(snap: SimulationSnapshot): { cx: number; cy: number } {
+    if (this.boatUpCamera) {
+      return { cx: snap.playerX, cy: snap.playerY };
+    }
+    if (this.userZoom <= 1.02) {
+      return { cx: 0, cy: 0 };
+    }
+    const blend = Math.min(1, (this.userZoom - 1.0) / 0.45);
+    const maxPanX = Math.max(0, 33 - 18 / this.userZoom);
+    const maxPanY = Math.max(0, 23.5 - 12 / this.userZoom);
+    return {
+      cx: Math.max(-maxPanX, Math.min(maxPanX, snap.playerX * blend)),
+      cy: Math.max(-maxPanY, Math.min(maxPanY, snap.playerY * blend)),
+    };
+  }
+
   public screenToWorld(
     clientX: number,
     clientY: number,
@@ -101,9 +117,10 @@ export class MarinaCanvasRenderer {
     const sx = clientX - rect.left - rect.width / 2;
     const sy = clientY - rect.top - rect.height / 2;
     const scale = this.pixelsPerMeter;
+    const cam = this.getCameraWorldCenter(snap);
 
     if (!this.boatUpCamera) {
-      return { x: sx / scale, y: sy / scale };
+      return { x: cam.cx + sx / scale, y: cam.cy + sy / scale };
     }
     const camRot = snap.playerHeadingRad + Math.PI / 2;
     const cosR = Math.cos(camRot);
@@ -151,10 +168,11 @@ export class MarinaCanvasRenderer {
     const scale = this.pixelsPerMeter;
     ctx.scale(scale, scale);
 
+    const cam = this.getCameraWorldCenter(snap);
     if (this.boatUpCamera) {
       ctx.rotate(-(snap.playerHeadingRad + Math.PI / 2));
-      ctx.translate(-snap.playerX, -snap.playerY);
     }
+    ctx.translate(-cam.cx, -cam.cy);
 
     // 3. Subtle Depth Contours & Leeward Yacht Wind-Shadow Cones (when X-Ray active)
     this.drawBasinFloorAndWindShadows(ctx, marina, snap);

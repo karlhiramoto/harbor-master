@@ -13,9 +13,11 @@ async function bootstrap(): Promise<void> {
 
   const shell = document.createElement('div');
   shell.className = 'sim-shell';
+  const canvasViewport = document.createElement('div');
+  canvasViewport.className = 'canvas-viewport';
   const canvas = document.createElement('canvas');
   canvas.className = 'marina-canvas';
-  shell.appendChild(canvas);
+  canvasViewport.appendChild(canvas);
   root.appendChild(shell);
 
   const world = await MarinaPhysicsWorld.create();
@@ -43,7 +45,7 @@ async function bootstrap(): Promise<void> {
     hud.setCurrentStageMeta(stage.title, stage.briefing, stage);
   };
 
-  const hud = new ControlsHud(shell, {
+  const hud = new ControlsHud(shell, canvasViewport, {
     onThrottleChange: (throttle) => {
       sound.unlock();
       world.setControls({ throttle });
