@@ -195,6 +195,23 @@ body,
   text-align: center;
 }
 
+.berth-checklist-pill {
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid var(--accent-gold);
+  color: #fef3c7;
+  padding: 5px 14px;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.berth-checklist-pill.ready {
+  background: rgba(6, 78, 59, 0.96);
+  border-color: var(--accent-emerald);
+  color: #d1fae5;
+}
+
 .incident-toast {
   padding: 6px 14px;
   border-radius: var(--radius-sm);
@@ -394,6 +411,55 @@ body,
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.helm-row-with-keys {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.key-cap-btn {
+  min-width: 30px;
+  height: 28px;
+  background: rgba(15, 23, 42, 0.9);
+  color: var(--text-main);
+  border: 1px solid rgba(148, 163, 184, 0.42);
+  border-bottom-width: 3px;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.08s ease, background 0.08s ease, border-color 0.08s ease;
+}
+
+.key-cap-btn.active,
+.key-cap-btn:active {
+  background: var(--accent-gold);
+  color: #0f172a;
+  border-color: var(--accent-gold);
+  transform: translateY(1px);
+}
+
+.help-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+}
+
+.help-item {
+  background: rgba(7, 22, 32, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8rem;
 }
 
 /* Modal Drawer Overlay (Campaign Selector, Sandbox Setup, & Scorecard) */

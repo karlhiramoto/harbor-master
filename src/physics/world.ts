@@ -54,6 +54,24 @@ export interface GhostPoint {
   headingRad: number;
 }
 
+export interface MooringLineSegment {
+  boatX: number;
+  boatY: number;
+  cleatX: number;
+  cleatY: number;
+}
+
+export interface DockingChecklistState {
+  nearBerth: boolean;
+  inBerthZone: boolean;
+  headingAligned: boolean;
+  speedStopped: boolean;
+  readyToMoor: boolean;
+  headingErrorDeg: number;
+  speedKnots: number;
+  mooredLines: MooringLineSegment[];
+}
+
 export interface SimulationSnapshot {
   elapsedSec: number;
   vesselSpec: VesselSpec;
@@ -75,6 +93,7 @@ export interface SimulationSnapshot {
   nearestCleatCandidate: { dockCleat: DockCleat; boatCleat: CleatMount; distM: number } | null;
   activeSpringLine: ActiveSpringLine | null;
   targetBerth: TargetBerth;
+  dockingChecklist: DockingChecklistState;
   dockingHoldProgress: number;
   liveScore: number;
   repairCostUsd: number;
@@ -398,8 +417,18 @@ export class MarinaPhysicsWorld {
     });
   }
 
-  /** Toggle or attach Spring-Line Cleat Lasso to nearest dock cleat (or specific clicked dockCleatId). */
+  /**
+   * Toggle or attach Spring-Line Cleat Lasso to nearest dock cleat (or specific clicked dockCleatId).
+   * If already snug inside the target berth (`readyToMoor`), ties Bow & Stern lines and finishes immediately!
+   */
   public toggleSpringLine(specificDockCleatId?: string): boolean {
+    const pos = this.playerBody.translation();
+    const checklist = this.computeDockingChecklist(pos.x, pos.y, this.playerBody.rotation());
+    if (!this.completionReport && checklist.readyToMoor && !specificDockCleatId) {
+      this.completeStageWithMooringLines(pos.x, pos.y, checklist.headingErrorDeg);
+      return true;
+    }
+
     if (this.activeSpringLine && !specificDockCleatId) {
       this.activeSpringLine = null;
       return false;
@@ -687,45 +716,142 @@ export class MarinaPhysicsWorld {
     }
   }
 
-  private evaluateBerthProgress(dt: number, px: number, py: number, headingRad: number): void {
-    if (this.completionReport) return;
+  private computeDockingChecklist(
+    px: number,
+    py: number,
+    headingRad: number
+  ): DockingChecklistState {
     const berth = this.marina.berths[this.berthId];
-    if (!berth) return;
+    if (!berth) {
+      return {
+        nearBerth: false,
+        inBerthZone: false,
+        headingAligned: false,
+        speedStopped: false,
+        readyToMoor: false,
+        headingErrorDeg: 180,
+        speedKnots: 0,
+        mooredLines: [],
+      };
+    }
 
     const dx = Math.abs(px - berth.x);
     const dy = Math.abs(py - berth.y);
-    const insideFootprint = dx <= berth.width * 0.46 && dy <= berth.length * 0.36;
+    const inBerthZone = dx <= berth.width * 0.5 && dy <= berth.length * 0.5;
+    const nearBerth = dx <= berth.width * 0.5 + 5.0 && dy <= berth.length * 0.5 + 5.0;
 
-    // Compute heading alignment error in degrees
     const normDiff = (a: number, b: number) => {
       const diff = ((a - b + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
       return Math.abs((diff * 180) / Math.PI);
     };
-    let headingErrDeg = normDiff(headingRad, berth.targetHeadingRad);
+    let headingErrorDeg = normDiff(headingRad, berth.targetHeadingRad);
     if (berth.allowOppositeHeading) {
-      headingErrDeg = Math.min(headingErrDeg, normDiff(headingRad, berth.targetHeadingRad + Math.PI));
+      headingErrorDeg = Math.min(
+        headingErrorDeg,
+        normDiff(headingRad, berth.targetHeadingRad + Math.PI)
+      );
     }
 
-    const speedKn = this.telemetry.speedKnots;
-    if (insideFootprint && headingErrDeg <= 24 && speedKn <= 0.42) {
-      this.dockingHoldSec = Math.min(1.8, this.dockingHoldSec + dt);
-      if (this.dockingHoldSec >= 1.8) {
-        const distErr = Math.hypot(px - berth.x, py - berth.y);
-        const report = this.scorer.computeCompletionReport({
-          distanceErrorM: distErr,
-          headingErrorDeg: headingErrDeg,
-          trueWindKnots: this.trueWindKnots,
-          elapsedSec: this.elapsedSec,
-        });
-        this.completionReport = report;
-        const stageKey = `${this.berthId}:${this.vesselId}`;
-        if (!this.ghostTrailsByStage.has(stageKey) || report.bareHullScrapesCount === 0) {
-          this.ghostTrailsByStage.set(stageKey, [...this.currentTrail]);
+    const speedKnots = this.telemetry.speedKnots;
+    const headingAligned = headingErrorDeg <= 32;
+    const speedStopped = speedKnots <= 0.65;
+    const readyToMoor = inBerthZone && headingAligned && speedStopped;
+
+    const mooredLines: MooringLineSegment[] = this.completionReport
+      ? this.computeVisualMooringLines(px, py, headingRad)
+      : [];
+
+    return {
+      nearBerth,
+      inBerthZone,
+      headingAligned,
+      speedStopped,
+      readyToMoor,
+      headingErrorDeg,
+      speedKnots,
+      mooredLines,
+    };
+  }
+
+  private computeVisualMooringLines(
+    px: number,
+    py: number,
+    headingRad: number
+  ): MooringLineSegment[] {
+    const spec = VESSEL_SPECS[this.vesselId];
+    const cosH = Math.cos(headingRad);
+    const sinH = Math.sin(headingRad);
+    const bowWorld = {
+      x: px + spec.loa * 0.44 * cosH,
+      y: py + spec.loa * 0.44 * sinH,
+    };
+    const sternWorld = {
+      x: px - spec.loa * 0.44 * cosH,
+      y: py - spec.loa * 0.44 * sinH,
+    };
+
+    const pickClosestDockCleat = (pt: { x: number; y: number }): DockCleat => {
+      let best = this.marina.cleats[0];
+      let bestD = Infinity;
+      for (const cl of this.marina.cleats) {
+        const d = Math.hypot(cl.x - pt.x, cl.y - pt.y);
+        if (d < bestD) {
+          bestD = d;
+          best = cl;
         }
-        this.onComplete?.(report);
+      }
+      return best;
+    };
+
+    const bowCleat = pickClosestDockCleat(bowWorld);
+    const sternCleat = pickClosestDockCleat(sternWorld);
+
+    return [
+      { boatX: bowWorld.x, boatY: bowWorld.y, cleatX: bowCleat.x, cleatY: bowCleat.y },
+      { boatX: sternWorld.x, boatY: sternWorld.y, cleatX: sternCleat.x, cleatY: sternCleat.y },
+    ];
+  }
+
+  private completeStageWithMooringLines(
+    px: number,
+    py: number,
+    headingErrorDeg: number
+  ): void {
+    const berth = this.marina.berths[this.berthId];
+    if (!berth || this.completionReport) return;
+
+    this.dockingHoldSec = 2.5;
+    this.controls.throttle = 0;
+    this.controls.bowThruster = 0;
+    this.playerBody.setLinvel({ x: 0, y: 0 }, true);
+    this.playerBody.setAngvel(0, true);
+
+    const distErr = Math.hypot(px - berth.x, py - berth.y);
+    const report = this.scorer.computeCompletionReport({
+      distanceErrorM: distErr,
+      headingErrorDeg,
+      trueWindKnots: this.trueWindKnots,
+      elapsedSec: this.elapsedSec,
+    });
+    this.completionReport = report;
+    const stageKey = `${this.berthId}:${this.vesselId}`;
+    if (!this.ghostTrailsByStage.has(stageKey) || report.bareHullScrapesCount === 0) {
+      this.ghostTrailsByStage.set(stageKey, [...this.currentTrail]);
+    }
+    this.onComplete?.(report);
+  }
+
+  private evaluateBerthProgress(dt: number, px: number, py: number, headingRad: number): void {
+    if (this.completionReport) return;
+    const checklist = this.computeDockingChecklist(px, py, headingRad);
+
+    if (checklist.readyToMoor) {
+      this.dockingHoldSec = Math.min(2.5, this.dockingHoldSec + dt);
+      if (this.dockingHoldSec >= 2.5) {
+        this.completeStageWithMooringLines(px, py, checklist.headingErrorDeg);
       }
     } else {
-      this.dockingHoldSec = Math.max(0, this.dockingHoldSec - dt * 1.4);
+      this.dockingHoldSec = Math.max(0, this.dockingHoldSec - dt * 1.15);
     }
   }
 
@@ -758,7 +884,8 @@ export class MarinaPhysicsWorld {
       nearestCleatCandidate: this.findNearestCleatCandidate(),
       activeSpringLine: this.activeSpringLine ? { ...this.activeSpringLine } : null,
       targetBerth: this.marina.berths[this.berthId],
-      dockingHoldProgress: clamp(this.dockingHoldSec / 1.8, 0, 1),
+      dockingChecklist: this.computeDockingChecklist(pos.x, pos.y, rot),
+      dockingHoldProgress: clamp(this.dockingHoldSec / 2.5, 0, 1),
       liveScore: this.scorer.getLiveScore(),
       repairCostUsd: this.scorer.getRepairCostUsd(),
       bareHullScrapes: this.scorer.getBareHullScrapesCount(),

@@ -4,6 +4,8 @@ import { CAMPAIGN_STAGES, CampaignStage } from './physics/campaign';
 import { MarinaCanvasRenderer } from './renderer/canvasRenderer';
 import { MarineSoundEngine } from './audio/soundEngine';
 import { ControlsHud } from './ui/controlsHud';
+import { KeyboardController, stepThrottleWithNeutralDetent } from './input/keyboardController';
+import { clamp } from './physics/hydrodynamics';
 
 async function bootstrap(): Promise<void> {
   const root = document.getElementById('app-root');
@@ -19,9 +21,9 @@ async function bootstrap(): Promise<void> {
   const world = await MarinaPhysicsWorld.create();
   const renderer = new MarinaCanvasRenderer(canvas);
   const sound = new MarineSoundEngine();
+  const kb = new KeyboardController();
 
   let activeStage: CampaignStage = CAMPAIGN_STAGES[0];
-  const pressedKeys = new Set<string>();
 
   const loadCampaignStage = (stage: CampaignStage): void => {
     activeStage = stage;
@@ -45,9 +47,20 @@ async function bootstrap(): Promise<void> {
       sound.unlock();
       world.setControls({ throttle });
     },
+    onThrottleStep: (delta) => {
+      sound.unlock();
+      const cur = world.getSnapshot().controls.throttle;
+      world.setControls({ throttle: stepThrottleWithNeutralDetent(cur, delta) });
+    },
     onHelmChange: (helm) => {
       sound.unlock();
       world.setControls({ helm });
+    },
+    onHelmStep: (delta) => {
+      sound.unlock();
+      const cur = world.getSnapshot().controls.helm;
+      const stepped = clamp(cur + delta, -1, 1);
+      world.setControls({ helm: Math.abs(stepped) < 0.04 ? 0 : stepped });
     },
     onBowThrusterChange: (bowThruster) => {
       sound.unlock();
@@ -106,6 +119,15 @@ async function bootstrap(): Promise<void> {
       return next;
     },
   });
+
+  kb.onSpringLine = () => {
+    if (world.toggleSpringLine()) {
+      sound.playCleatLatch();
+    }
+  };
+  kb.onResetStage = () => loadCampaignStage(activeStage);
+  kb.onToggleXRay = () => renderer.setShowForceXRay(!renderer.isShowForceXRay());
+  kb.onOpenHelp = () => hud.openHelpModal();
 
   world.onIncident = (incident) => {
     hud.showIncidentToast(incident);
@@ -176,28 +198,45 @@ async function bootstrap(): Promise<void> {
     prevPinchDist = null;
   });
 
-  // Keyboard Controls
-  window.addEventListener('keydown', (ev) => {
-    sound.unlock();
-    const code = ev.code;
-    pressedKeys.add(code);
-
-    if (code === 'Space') {
-      ev.preventDefault();
-      world.setControls({ throttle: 0 });
-    } else if (code === 'KeyM') {
-      if (world.toggleSpringLine()) {
-        sound.playCleatLatch();
+  // Keyboard Arrow Keys (↑ ↓ ← →) + WASD + Shortcuts
+  window.addEventListener(
+    'keydown',
+    (ev) => {
+      if (ev.code === 'Escape' || ev.key === 'Escape') {
+        hud.closeAnyModal();
+        return;
       }
-    } else if (code === 'KeyR') {
-      loadCampaignStage(activeStage);
-    } else if (code === 'KeyX') {
-      renderer.setShowForceXRay(!renderer.isShowForceXRay());
-    }
-  });
+      if (ev.code === 'Enter' || ev.key === 'Enter') {
+        if (hud.triggerScorecardPrimaryAction()) {
+          ev.preventDefault();
+          return;
+        }
+      }
+
+      // Allow normal slider/dropdown interaction when Sandbox Setup modal controls are focused
+      const activeTag = document.activeElement?.tagName;
+      if (activeTag === 'SELECT' || activeTag === 'INPUT') {
+        return;
+      }
+      if (activeTag === 'BUTTON' && document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+
+      sound.unlock();
+      const { handled, nextControls } = kb.handleKeyDown(ev, world.getSnapshot().controls);
+      if (handled) {
+        world.setControls(nextControls);
+      }
+    },
+    { passive: false }
+  );
 
   window.addEventListener('keyup', (ev) => {
-    pressedKeys.delete(ev.code);
+    kb.handleKeyUp(ev);
+  });
+
+  window.addEventListener('blur', () => {
+    kb.clearAllHeld();
   });
 
   // 60-120 Hz Main Simulation & Render Loop
@@ -206,43 +245,13 @@ async function bootstrap(): Promise<void> {
     const dtSec = Math.min(0.05, Math.max(0.001, (nowMs - prevTimeMs) / 1000));
     prevTimeMs = nowMs;
 
-    const currentControls = world.getSnapshot().controls;
-    let nextThrottle = currentControls.throttle;
-    let nextHelm = currentControls.helm;
-    let nextThruster = currentControls.bowThruster;
-
-    if (pressedKeys.has('KeyW') || pressedKeys.has('ArrowUp')) {
-      nextThrottle = Math.min(1, nextThrottle + dtSec * 0.85);
-    } else if (pressedKeys.has('KeyS') || pressedKeys.has('ArrowDown')) {
-      nextThrottle = Math.max(-1, nextThrottle - dtSec * 0.85);
-    }
-
-    if (pressedKeys.has('KeyD') || pressedKeys.has('ArrowRight')) {
-      nextHelm = Math.min(1, nextHelm + dtSec * 1.35);
-    } else if (pressedKeys.has('KeyA') || pressedKeys.has('ArrowLeft')) {
-      nextHelm = Math.max(-1, nextHelm - dtSec * 1.35);
-    }
-
-    if (pressedKeys.has('KeyE')) {
-      nextThruster = 1;
-    } else if (pressedKeys.has('KeyQ')) {
-      nextThruster = -1;
-    } else if (
-      !document.querySelector('.thruster-btn.pressing') &&
-      Math.abs(nextThruster) > 0
-    ) {
-      nextThruster = 0;
-    }
-
-    world.setControls({
-      throttle: nextThrottle,
-      helm: nextHelm,
-      bowThruster: nextThruster,
-    });
+    const pointerThrusterHeld = Boolean(document.querySelector('.thruster-btn.pressing'));
+    const nextControls = kb.step(dtSec, world.getSnapshot().controls, pointerThrusterHeld);
+    world.setControls(nextControls);
 
     const snap = world.stepFrame(dtSec);
     renderer.render(snap, world.marina, dtSec);
-    hud.updateTelemetry(snap);
+    hud.updateTelemetry(snap, kb.getActiveHighlights());
     sound.updateContinuous({
       isDiesel: snap.vesselSpec.propulsion === 'inboard-diesel',
       throttle: snap.controls.throttle,
