@@ -27,6 +27,7 @@ async function bootstrap(): Promise<void> {
 
   const loadCampaignStage = (stage: CampaignStage): void => {
     activeStage = stage;
+    hud.closeAnyModal();
     world.rebuildWorld({
       vesselId: stage.vesselId,
       fenderRig: stage.recommendedRig,
@@ -148,6 +149,11 @@ async function bootstrap(): Promise<void> {
   world.onComplete = (report) => {
     sound.playShipsBell();
     hud.showCompletionModal(report);
+  };
+
+  world.onGameOver = (repairCostUsd, incidents) => {
+    sound.playBareHullScrape(true);
+    hud.showGameOverModal(repairCostUsd, incidents);
   };
 
   loadCampaignStage(CAMPAIGN_STAGES[0]);
