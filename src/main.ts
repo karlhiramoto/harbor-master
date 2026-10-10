@@ -206,6 +206,12 @@ async function bootstrap(): Promise<void> {
         hud.closeAnyModal();
         return;
       }
+      if (ev.code === 'Enter' || ev.key === 'Enter') {
+        if (hud.triggerScorecardPrimaryAction()) {
+          ev.preventDefault();
+          return;
+        }
+      }
 
       // Allow normal slider/dropdown interaction when Sandbox Setup modal controls are focused
       const activeTag = document.activeElement?.tagName;

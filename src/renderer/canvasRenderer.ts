@@ -304,14 +304,22 @@ export class MarinaCanvasRenderer {
   private drawTargetBerth(ctx: CanvasRenderingContext2D, snap: SimulationSnapshot): void {
     const berth = snap.targetBerth;
     const pulse = 0.5 + 0.5 * Math.sin(snap.elapsedSec * 3.2);
-    const active = snap.dockingHoldProgress > 0.02;
+    const { inBerthZone, readyToMoor } = snap.dockingChecklist;
+
+    let fillCss = `rgba(56, 189, 248, ${(0.11 + pulse * 0.06).toFixed(2)})`;
+    let strokeCss = '#38bdf8';
+    if (readyToMoor || snap.dockingHoldProgress > 0.02) {
+      fillCss = 'rgba(16, 185, 129, 0.28)';
+      strokeCss = '#34d399';
+    } else if (inBerthZone) {
+      fillCss = 'rgba(245, 158, 11, 0.2)';
+      strokeCss = '#fbbf24';
+    }
 
     ctx.save();
     ctx.translate(berth.x, berth.y);
-    ctx.fillStyle = active
-      ? 'rgba(16, 185, 129, 0.26)'
-      : `rgba(56, 189, 248, ${(0.11 + pulse * 0.07).toFixed(2)})`;
-    ctx.strokeStyle = active ? '#34d399' : '#38bdf8';
+    ctx.fillStyle = fillCss;
+    ctx.strokeStyle = strokeCss;
     ctx.lineWidth = 0.14;
     ctx.setLineDash([0.55, 0.35]);
     ctx.fillRect(-berth.width / 2, -berth.length / 2, berth.width, berth.length);
@@ -611,6 +619,16 @@ export class MarinaCanvasRenderer {
   }
 
   private drawSpringLines(ctx: CanvasRenderingContext2D, snap: SimulationSnapshot): void {
+    // Render tied Bow & Stern Mooring Lines when stage is moored!
+    for (const ml of snap.dockingChecklist.mooredLines) {
+      ctx.strokeStyle = '#34d399';
+      ctx.lineWidth = 0.15;
+      ctx.beginPath();
+      ctx.moveTo(ml.boatX, ml.boatY);
+      ctx.lineTo(ml.cleatX, ml.cleatY);
+      ctx.stroke();
+    }
+
     const cosH = Math.cos(snap.playerHeadingRad);
     const sinH = Math.sin(snap.playerHeadingRad);
 

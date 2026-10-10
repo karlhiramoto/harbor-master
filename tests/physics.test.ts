@@ -192,4 +192,52 @@ describe('Real-Life Marine Physics & 4-Fender Scoring Suite', () => {
     controls = kb.handleKeyDown({ code: 'Space' }, controls).nextControls;
     expect(controls.throttle).toBe(0);
   });
+
+  it('Completes a stage snug against pier cleats via either M (instant tie lines) or 2.5s auto-mooring hold', async () => {
+    const world = await MarinaPhysicsWorld.create();
+
+    // Place boat snug alongside Slip A West Finger Pier cleats (x = -9.4, y = -12.0, Bow-In -PI/2)
+    world.rebuildWorld({
+      vesselId: 'outboard7m',
+      fenderRig: 'midships',
+      berthId: 'slip-a-bow',
+      startX: -9.4,
+      startY: -12.0,
+      startHeadingRad: -Math.PI / 2,
+      trueWindKnots: 2,
+      windFromDeg: 0,
+      gustiness: 0,
+      enableTraffic: false,
+    });
+
+    const initialSnap = world.stepFrame(0.05);
+    expect(initialSnap.dockingChecklist.inBerthZone).toBe(true);
+    expect(initialSnap.dockingChecklist.headingAligned).toBe(true);
+    expect(initialSnap.dockingChecklist.speedStopped).toBe(true);
+    expect(initialSnap.dockingChecklist.readyToMoor).toBe(true);
+
+    // Path 1: Instant M / "Tie Lines & Finish" button immediately completes stage and attaches Bow + Stern ropes!
+    expect(world.toggleSpringLine()).toBe(true);
+    const instantSnap = world.getSnapshot();
+    expect(instantSnap.completionReport?.completed).toBe(true);
+    expect(instantSnap.dockingChecklist.mooredLines).toHaveLength(2);
+
+    // Path 2: Automatic 2.5s Dwell Timer completes stage automatically without pressing M
+    world.rebuildWorld({
+      vesselId: 'outboard7m',
+      fenderRig: 'midships',
+      berthId: 'slip-a-bow',
+      startX: -9.4,
+      startY: -12.0,
+      startHeadingRad: -Math.PI / 2,
+      trueWindKnots: 0,
+      windFromDeg: 0,
+      gustiness: 0,
+      enableTraffic: false,
+    });
+    for (let i = 0; i < 60; i++) {
+      world.stepFrame(0.05); // 60 * 0.05s = 3.0s > 2.5s hold threshold
+    }
+    expect(world.getSnapshot().completionReport?.completed).toBe(true);
+  });
 });

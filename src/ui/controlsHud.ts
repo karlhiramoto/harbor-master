@@ -94,6 +94,7 @@ export class ControlsHud {
   private readonly speedValEl: HTMLElement;
   private readonly windValEl: HTMLElement;
   private readonly briefingEl: HTMLElement;
+  private readonly berthStatusEl: HTMLElement;
   private readonly toastEl: HTMLElement;
 
   private readonly throttleTrackEl: HTMLElement;
@@ -111,6 +112,7 @@ export class ControlsHud {
 
   private currentStage: CampaignStage = CAMPAIGN_STAGES[0];
   private toastClearTimer: number | null = null;
+  private activeScorecardNextAction: (() => void) | null = null;
 
   constructor(container: HTMLElement, callbacks: HudCallbacks) {
     this.callbacks = callbacks;
@@ -151,12 +153,14 @@ export class ControlsHud {
     actions.append(stagesBtn, retryBtn, xrayBtn, muteBtn, helpBtn);
     topBar.append(brandGroup, strip, actions);
 
-    // Center Live Briefing & Incident Callout Banner
+    // Center Live Briefing, Live Docking Checklist Pill & Incident Banner
     const bannerZone = el('div', 'hud-banner-zone');
     this.briefingEl = el('div', 'briefing-bar', this.currentStage.briefing);
+    this.berthStatusEl = el('div', 'berth-checklist-pill');
+    this.berthStatusEl.style.display = 'none';
     this.toastEl = el('div', 'incident-toast');
     this.toastEl.style.opacity = '0';
-    bannerZone.append(this.briefingEl, this.toastEl);
+    bannerZone.append(this.briefingEl, this.berthStatusEl, this.toastEl);
 
     // Bottom Dual-Thumb + Arrow Key Controls Dock
     const bottomDock = el('div', 'hud-bottom-dock');
@@ -395,8 +399,36 @@ export class ControlsHud {
       buttonEl.classList.toggle('active-toggle', snap.fenderRig === mode);
     }
 
-    // Update Cleat Lasso Button State
-    if (snap.activeSpringLine) {
+    // Live 3-Step Docking Checklist & Dual-Mode Completion Status
+    const chk = snap.dockingChecklist;
+    if (chk.nearBerth && !snap.completionReport) {
+      this.berthStatusEl.style.display = 'block';
+      const c1 = chk.inBerthZone ? '✓ In Slip' : '○ Enter Slip Box';
+      const c2 = chk.headingAligned
+        ? `✓ Aligned (${Math.round(chk.headingErrorDeg)}°)`
+        : `○ Align <=32° (${Math.round(chk.headingErrorDeg)}°)`;
+      const c3 = chk.speedStopped
+        ? `✓ Stopped (${chk.speedKnots.toFixed(1)} kn)`
+        : `○ Slow <=0.6 kn (${chk.speedKnots.toFixed(1)} kn)`;
+
+      if (chk.readyToMoor) {
+        const pct = Math.round(snap.dockingHoldProgress * 100);
+        this.berthStatusEl.textContent = `${c1} · ${c2} · ${c3} — Mooring ${pct}% (or Press M to Finish Now!)`;
+        this.berthStatusEl.className = 'berth-checklist-pill ready';
+      } else {
+        this.berthStatusEl.textContent = `${c1} · ${c2} · ${c3}`;
+        this.berthStatusEl.className = 'berth-checklist-pill';
+      }
+    } else {
+      this.berthStatusEl.style.display = 'none';
+    }
+
+    // Update Cleat Lasso / Instant Tie Mooring Lines & Finish Button State
+    if (chk.readyToMoor && !snap.completionReport) {
+      this.lassoBtnEl.textContent = '⚓ Tie Lines & Finish! (M)';
+      this.lassoBtnEl.classList.add('attached');
+      this.lassoBtnEl.disabled = false;
+    } else if (snap.activeSpringLine) {
       this.lassoBtnEl.textContent = 'Cast Off Line (M)';
       this.lassoBtnEl.classList.add('attached');
       this.lassoBtnEl.disabled = false;
@@ -433,7 +465,7 @@ export class ControlsHud {
       ['← / →  or  A / D', 'Steer Helm Port / Starboard (tap for 5° nudge, hold to sweep wheel).'],
       ['Space  ·  C', 'Space cuts Throttle to Neutral immediately; C centers Helm to 0°.'],
       ['Q / E (8m Cruiser)', 'Fire Proportional Bow Thruster Port (Q) or Starboard (E) to walk sideways.'],
-      ['M  or  Tap Dock Cleat', 'Toss/cast off a Spring Line when within 4.3m of a glowing cleat to pivot against wind!'],
+      ['Finish & Next Stage', 'Stop (< 0.65 kn) aligned inside the dashed slip for 2.5s OR press M to tie lines & finish immediately!'],
       ['Bow / Mid / Aft Fenders', 'Slide your 2 Port & 2 Starboard fenders to shield bow stems or quarters from yacht scrapes!'],
     ];
 
@@ -449,6 +481,7 @@ export class ControlsHud {
   }
 
   public openSetupModal(): void {
+    this.activeScorecardNextAction = null;
     this.modalHostEl.replaceChildren();
     const backdrop = el('div', 'modal-backdrop');
     const card = el('div', 'modal-card');
@@ -498,7 +531,7 @@ export class ControlsHud {
     const berthSelect = document.createElement('select');
     berthSelect.className = 'hud-btn';
     for (const [bId, bLabel] of [
-      ['slip-a-bow', 'North Slip A (Bow-In)'],
+      ['slip-a-bow', 'North Slip A (Alongside Finger Pier)'],
       ['slip-b-tight', 'North Slip B — Beside Yacht'],
       ['east-seawall', 'East Seawall Parallel'],
       ['south-med-stern', 'South Med Stern-In'],
@@ -568,12 +601,24 @@ export class ControlsHud {
   }
 
   public closeAnyModal(): void {
+    this.activeScorecardNextAction = null;
     this.modalHostEl.replaceChildren();
+  }
+
+  public triggerScorecardPrimaryAction(): boolean {
+    if (this.activeScorecardNextAction) {
+      const fn = this.activeScorecardNextAction;
+      this.activeScorecardNextAction = null;
+      fn();
+      return true;
+    }
+    return false;
   }
 
   public showCompletionModal(report: BerthCompletionReport): void {
     saveStageCompletion(this.currentStage.id, report.rank, report.finalScore);
     this.modalHostEl.replaceChildren();
+    this.activeScorecardNextAction = null;
 
     const backdrop = el('div', 'modal-backdrop');
     const card = el('div', 'modal-card');
@@ -593,15 +638,19 @@ export class ControlsHud {
     const nextIdx = CAMPAIGN_STAGES.findIndex((s) => s.id === this.currentStage.id) + 1;
     if (nextIdx > 0 && nextIdx < CAMPAIGN_STAGES.length) {
       const nextStage = CAMPAIGN_STAGES[nextIdx];
-      const nextBtn = btn(`Next: ${nextStage.title}`, 'hud-btn primary', () => {
+      const goNext = () => {
+        this.activeScorecardNextAction = null;
         this.currentStage = nextStage;
         this.modalHostEl.replaceChildren();
         this.callbacks.onSelectCampaignStage(nextStage);
-      });
+      };
+      this.activeScorecardNextAction = goNext;
+      const nextBtn = btn(`Next: ${nextStage.title} (Enter) ➔`, 'hud-btn primary', goNext);
       actionRow.append(nextBtn);
     }
 
-    const replayBtn = btn('Replay Stage', 'hud-btn', () => {
+    const replayBtn = btn('Replay Stage (R)', 'hud-btn', () => {
+      this.activeScorecardNextAction = null;
       this.modalHostEl.replaceChildren();
       this.callbacks.onResetStage();
     });
