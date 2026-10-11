@@ -114,6 +114,11 @@ async function bootstrap(): Promise<void> {
     },
     onZoomDelta: (delta) => {
       renderer.setZoom(renderer.getZoom() + delta);
+      return renderer.getZoom();
+    },
+    onResetZoom: () => {
+      renderer.setZoom(1.0);
+      return renderer.getZoom();
     },
     onToggleMute: () => {
       sound.unlock();
@@ -160,6 +165,23 @@ async function bootstrap(): Promise<void> {
 
   loadCampaignStage(CAMPAIGN_STAGES[0]);
 
+  // Prevent iOS Safari / WebKit native browser visualViewport zoom during two-thumb steering or pinching
+  const preventSafariNativeZoom = (ev: Event): void => {
+    ev.preventDefault();
+  };
+  window.addEventListener('gesturestart', preventSafariNativeZoom, { passive: false });
+  window.addEventListener('gesturechange', preventSafariNativeZoom, { passive: false });
+  window.addEventListener('gestureend', preventSafariNativeZoom, { passive: false });
+  document.addEventListener(
+    'touchmove',
+    (ev) => {
+      if (ev.touches.length > 1) {
+        ev.preventDefault();
+      }
+    },
+    { passive: false }
+  );
+
   // Tap directly on any reachable dock cleat on the canvas to lasso/release a spring line!
   canvas.addEventListener('pointerdown', (ev) => {
     sound.unlock();
@@ -181,30 +203,39 @@ async function bootstrap(): Promise<void> {
     (ev) => {
       ev.preventDefault();
       renderer.setZoom(renderer.getZoom() - Math.sign(ev.deltaY) * 0.12);
+      hud.setZoomReadout(renderer.getZoom());
     },
     { passive: false }
   );
 
-  // Two-finger mobile pinch-to-zoom on marina canvas
+  // Hardened two-finger canvas pinch-to-zoom (strictly isolated to targetTouches on canvas + touchcancel cleanup)
   let prevPinchDist: number | null = null;
+  const resetPinchState = (): void => {
+    prevPinchDist = null;
+  };
+  canvas.addEventListener('touchstart', resetPinchState, { passive: true });
+  canvas.addEventListener('touchend', resetPinchState, { passive: true });
+  canvas.addEventListener('touchcancel', resetPinchState, { passive: true });
   canvas.addEventListener(
     'touchmove',
     (ev) => {
-      if (ev.touches.length === 2) {
-        const dx = ev.touches[0].clientX - ev.touches[1].clientX;
-        const dy = ev.touches[0].clientY - ev.touches[1].clientY;
+      ev.preventDefault();
+      if (ev.targetTouches.length === 2) {
+        const dx = ev.targetTouches[0].clientX - ev.targetTouches[1].clientX;
+        const dy = ev.targetTouches[0].clientY - ev.targetTouches[1].clientY;
         const dist = Math.hypot(dx, dy);
         if (prevPinchDist !== null) {
-          renderer.setZoom(renderer.getZoom() + (dist - prevPinchDist) * 0.004);
+          const zoomStep = clamp((dist - prevPinchDist) * 0.004, -0.08, 0.08);
+          renderer.setZoom(renderer.getZoom() + zoomStep);
+          hud.setZoomReadout(renderer.getZoom());
         }
         prevPinchDist = dist;
+      } else {
+        prevPinchDist = null;
       }
     },
-    { passive: true }
+    { passive: false }
   );
-  canvas.addEventListener('touchend', () => {
-    prevPinchDist = null;
-  });
 
   // Keyboard Arrow Keys (↑ ↓ ← →) + WASD + Shortcuts
   window.addEventListener(
