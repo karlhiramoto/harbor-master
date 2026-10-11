@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import indexCssRaw from '../src/index.css?inline';
+import mainTsRaw from '../src/main.ts?raw';
 import {
   VESSEL_SPECS,
   getVesselFenderMounts,
@@ -290,5 +291,14 @@ describe('Real-Life Marine Physics & 4-Fender Scoring Suite', () => {
     expect(reportedGameOverUsd).toBeGreaterThan(10_000);
     expect(snap.controls.throttle).toBe(0);
     expect(snap.controls.helm).toBe(0);
+  });
+
+  it('Prevents stuck browser zoom on iOS Safari via non-passive WebKit gesture locks, targetTouches isolation & touchcancel reset', () => {
+    expect(indexCssRaw).toContain('touch-action: none;');
+    expect(indexCssRaw).toContain('touch-action: pan-y;');
+    expect(mainTsRaw).toContain("window.addEventListener('gesturestart', preventSafariNativeZoom, { passive: false })");
+    expect(mainTsRaw).toContain("window.addEventListener('gesturechange', preventSafariNativeZoom, { passive: false })");
+    expect(mainTsRaw).toContain('ev.targetTouches.length === 2');
+    expect(mainTsRaw).toContain("canvas.addEventListener('touchcancel', resetPinchState");
   });
 });

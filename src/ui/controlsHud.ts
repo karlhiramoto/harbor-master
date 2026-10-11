@@ -81,7 +81,8 @@ export interface HudCallbacks {
   }) => void;
   onToggleXRay: () => boolean;
   onToggleCameraMode: () => boolean;
-  onZoomDelta: (delta: number) => void;
+  onZoomDelta: (delta: number) => number;
+  onResetZoom: () => number;
   onToggleMute: () => boolean;
 }
 
@@ -107,6 +108,7 @@ export class ControlsHud {
   private readonly keyRightBtn: HTMLButtonElement;
   private readonly thrusterRowEl: HTMLElement;
   private readonly lassoBtnEl: HTMLButtonElement;
+  private readonly zoomResetBtn: HTMLButtonElement;
   private readonly rigBtns = new Map<FenderRigMode, HTMLButtonElement>();
   private readonly modalHostEl: HTMLElement;
 
@@ -217,10 +219,21 @@ export class ControlsHud {
       camBtn.classList.toggle('active-toggle', boatUp);
     });
 
-    const zoomInBtn = btn('+', 'hud-btn', () => this.callbacks.onZoomDelta(0.18));
-    const zoomOutBtn = btn('-', 'hud-btn', () => this.callbacks.onZoomDelta(-0.18));
+    const zoomOutBtn = btn('-', 'hud-btn', () => {
+      const z = this.callbacks.onZoomDelta(-0.18);
+      this.setZoomReadout(z);
+    });
+    this.zoomResetBtn = btn('100%', 'hud-btn', () => {
+      const z = this.callbacks.onResetZoom();
+      this.setZoomReadout(z);
+    });
+    this.zoomResetBtn.title = 'Tap to reset camera zoom to 100%';
+    const zoomInBtn = btn('+', 'hud-btn', () => {
+      const z = this.callbacks.onZoomDelta(0.18);
+      this.setZoomReadout(z);
+    });
 
-    centerBar.append(rigGroup, this.lassoBtnEl, camBtn, zoomOutBtn, zoomInBtn);
+    centerBar.append(rigGroup, this.lassoBtnEl, camBtn, zoomOutBtn, this.zoomResetBtn, zoomInBtn);
 
     // 3. Right Helm Wheel + ◀ / ▶ Arrow Steppers & Bow Thruster Rocker
     const helmCluster = el('div', 'helm-cluster');
@@ -337,6 +350,12 @@ export class ControlsHud {
     if (stageRef) this.currentStage = stageRef;
     this.stageBadgeEl.textContent = title;
     this.briefingEl.textContent = briefing;
+  }
+
+  public setZoomReadout(zoom: number): void {
+    const pct = Math.round(zoom * 100);
+    this.zoomResetBtn.textContent = `${pct}%`;
+    this.zoomResetBtn.classList.toggle('active-toggle', pct !== 100);
   }
 
   public showIncidentToast(incident: ScoreIncident): void {

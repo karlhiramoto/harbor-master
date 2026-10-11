@@ -18,6 +18,7 @@
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
+  touch-action: none;
 }
 
 html,
@@ -499,6 +500,7 @@ body,
   width: min(680px, 95vw);
   max-height: 88dvh;
   overflow-y: auto;
+  touch-action: pan-y;
   background: #0b2938;
   border: 1px solid rgba(148, 163, 184, 0.35);
   border-radius: 16px;
@@ -506,6 +508,10 @@ body,
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.modal-card * {
+  touch-action: pan-y;
 }
 
 .stage-grid {
