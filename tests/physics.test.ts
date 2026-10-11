@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import indexCssRaw from '../src/index.css?inline';
 import mainTsRaw from '../src/main.ts?raw';
+import { CAMPAIGN_STAGES } from '../src/physics/campaign';
 import {
   VESSEL_SPECS,
   getVesselFenderMounts,
@@ -300,5 +301,12 @@ describe('Real-Life Marine Physics & 4-Fender Scoring Suite', () => {
     expect(mainTsRaw).toContain("window.addEventListener('gesturechange', preventSafariNativeZoom, { passive: false })");
     expect(mainTsRaw).toContain('ev.targetTouches.length === 2');
     expect(mainTsRaw).toContain("canvas.addEventListener('touchcancel', resetPinchState");
+  });
+
+  it('Spawns Stage 4 at the western harbor entrance well left of fairway paddleboarder & dinghy traffic', () => {
+    const stage4 = CAMPAIGN_STAGES.find((s) => s.stageNumber === 4);
+    expect(stage4).toBeDefined();
+    expect(stage4!.startX).toBeLessThanOrEqual(-22);
+    expect(stage4!.startHeadingRad).toBe(0);
   });
 });
