@@ -85,11 +85,11 @@ export const CAMPAIGN_STAGES: ReadonlyArray<CampaignStage> = [
     windFromDeg: 265,
     gustiness: 0.22,
     enableTraffic: true,
-    startX: 6,
-    startY: 1.0,
-    startHeadingRad: -Math.PI / 2,
+    startX: -24.5,
+    startY: 0.4,
+    startHeadingRad: 0,
     briefing:
-      'On-dock gusts blow straight onto the East Seawall between two yachts. Hold off with Bow Thruster & gentle reverse to kiss the seawall at < 0.8 kn!',
+      'Enter from the western harbor mouth, time your pass clear of the paddleboarder and dinghy tender, then use Bow Thruster & gentle reverse to kiss the East Seawall at < 0.8 kn!',
   },
   {
     stageNumber: 5,
