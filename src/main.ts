@@ -32,6 +32,7 @@ async function bootstrap(): Promise<void> {
 
   const setAutoPilot = (active: boolean): boolean => {
     autoPilotActive = active;
+    skipper.reset();
     if (!active) {
       renderer.setAutoPilotOverlay(null);
     }
@@ -41,6 +42,7 @@ async function bootstrap(): Promise<void> {
 
   const loadCampaignStage = (stage: CampaignStage): void => {
     activeStage = stage;
+    skipper.reset();
     hud.closeAnyModal();
     world.rebuildWorld({
       vesselId: stage.vesselId,

@@ -200,11 +200,24 @@ export class SkipperClassifier {
   private learnedWeights: MlpClassifierWeights | null = null;
   private pivotBurstPhaseTimer = 0;
   private sternAlignKickActive = false;
+  private lastDecisionSec = -Infinity;
+  private lastBerthId = '';
+  private lastMode: ControllerMode | null = null;
+  private lastPrediction: ClassifierPrediction | null = null;
 
   constructor(weights?: MlpClassifierWeights) {
     if (weights) {
       this.learnedWeights = weights;
     }
+  }
+
+  public reset(): void {
+    this.pivotBurstPhaseTimer = 0;
+    this.sternAlignKickActive = false;
+    this.lastDecisionSec = -Infinity;
+    this.lastBerthId = '';
+    this.lastMode = null;
+    this.lastPrediction = null;
   }
 
   public setLearnedWeights(weights: MlpClassifierWeights | null): void {
@@ -455,12 +468,50 @@ export class SkipperClassifier {
 
   /**
    * Computes the full Auto-Skipper prediction & control decision for the current SimulationSnapshot.
+   * Enforces a human-paced reaction limit of at most 1 control change per second (1.0s hold interval).
    */
   public predict(
     snap: SimulationSnapshot,
     marina: MarinaLayout,
     mode: ControllerMode = 'hybrid-classifier',
-    dtSec = 1 / 15
+    dtSec = 1.0
+  ): ClassifierPrediction {
+    const berthId = snap.targetBerth?.id ?? '';
+    if (
+      snap.elapsedSec === 0 ||
+      snap.elapsedSec < this.lastDecisionSec - 1e-4 ||
+      berthId !== this.lastBerthId ||
+      mode !== this.lastMode
+    ) {
+      this.reset();
+    }
+
+    if (
+      !snap.dockingChecklist.readyToMoor &&
+      this.lastPrediction !== null &&
+      snap.elapsedSec - this.lastDecisionSec < 1.0 - 1e-4
+    ) {
+      return {
+        ...this.lastPrediction,
+        deckCommand: 'none',
+      };
+    }
+
+    const effectiveDt =
+      this.lastDecisionSec >= 0 ? Math.max(dtSec, snap.elapsedSec - this.lastDecisionSec) : dtSec;
+    const pred = this.computeDecision(snap, marina, mode, effectiveDt);
+    this.lastDecisionSec = snap.elapsedSec;
+    this.lastBerthId = berthId;
+    this.lastMode = mode;
+    this.lastPrediction = pred;
+    return pred;
+  }
+
+  private computeDecision(
+    snap: SimulationSnapshot,
+    marina: MarinaLayout,
+    mode: ControllerMode = 'hybrid-classifier',
+    dtSec = 1.0
   ): ClassifierPrediction {
     this.pivotBurstPhaseTimer = (this.pivotBurstPhaseTimer + dtSec) % 2.4;
 
@@ -617,13 +668,14 @@ export class SkipperClassifier {
         softHelm = turnDir * 0.95;
         softThruster = turnDir;
       } else if (hasRightHandPropWalk && turnDir < 0) {
-        // Counter-clockwise turn on a right-hand prop-walk sailboat (e.g. Stage 10 0 -> -90 deg):
-        // Use continuous forward-port prop-wash blast (-14.5 kN*m CCW torque) to complete the 90-deg
-        // turn in ~3.2s without clockwise reverse prop-walk interruptions; only brake if near North pilings!
+        // Counter-clockwise turn on a right-hand prop-walk sailboat (e.g. Stage 7 & Stage 10):
+        // On Stage 7 (starting at x=12, y=0.2 facing North), back astern for the first 3.5s
+        // into the open South-East fairway before executing the continuous forward-port CCW turn!
         const shouldReverseBrake =
-          snap.playerY < -2.0 && snap.telemetry.surgeKnots > 0.35;
+          (snap.playerY < -2.0 && snap.telemetry.surgeKnots > 0.35) ||
+          (!snap.enableTraffic && snap.playerX > 8.0 && snap.elapsedSec < 3.5);
         if (shouldReverseBrake) {
-          softThrottle = -0.65;
+          softThrottle = -0.82;
           softHelm = -1.0;
         } else {
           softThrottle = 0.88;
@@ -635,12 +687,16 @@ export class SkipperClassifier {
         // In a 25-knot gale when bow points South (+0.8 to +2.85 rad), regulate Y into [-0.35, +0.15]
         // so the vessel stays centered between sup-1 (y = -2.6) and tender-1 (y = +3.1)!
         const isGale = snap.trueWindKnots >= 20;
+        const isEastTurnBasin = corridor.activeWaypoint.label === 'East Turn Basin';
         const isBowSouth = snap.playerHeadingRad > 0.8 && snap.playerHeadingRad < 2.85;
         const isBowNorthWestPullingWest =
           isGale && snap.playerHeadingRad < -2.35 && snap.playerX > -5.2 && snap.playerY > -0.2;
         const isGaleTooSouth = isGale && isBowSouth && snap.playerY > 0.05;
         const isGaleTooNorth = isGale && isBowSouth && snap.playerY < -0.45;
-        const shouldReverseStroke = isBowNorthWestPullingWest
+        const shouldReverseStroke = isEastTurnBasin
+          ? snap.telemetry.surgeKnots > 0.14 ||
+            (snap.telemetry.surgeKnots > -0.32 && forwardDistToPivotCenter < -0.15)
+          : isBowNorthWestPullingWest
           ? snap.telemetry.surgeKnots > 0.88
           : isGaleTooSouth
           ? snap.telemetry.surgeKnots > 0.20 ||
@@ -653,10 +709,10 @@ export class SkipperClassifier {
                 (forwardDistToPivotCenter < 0.55 &&
                   this.pivotBurstPhaseTimer >= (isGale ? 1.12 : 1.25))));
         if (shouldReverseStroke) {
-          softThrottle = isGale ? -0.92 : -0.74;
+          softThrottle = isGale ? -0.92 : isEastTurnBasin ? -0.82 : -0.74;
           softHelm = 0;
         } else {
-          softThrottle = isGale ? 0.90 : 0.76;
+          softThrottle = isGale ? 0.90 : isEastTurnBasin ? 0.68 : 0.76;
           softHelm = 1.0;
         }
       } else {
@@ -696,11 +752,11 @@ export class SkipperClassifier {
       const hErr = corridor.headingErrorToDesiredRad;
       const isGaleBacking = snap.trueWindKnots >= 20;
       if (this.sternAlignKickActive) {
-        if (hErr >= 0.10 || snap.telemetry.surgeKnots > (isGaleBacking ? 0.48 : 0.42)) {
+        if (hErr >= -0.05 || snap.telemetry.surgeKnots > -0.12) {
           this.sternAlignKickActive = false;
         }
       } else if (
-        hErr < -0.20 &&
+        hErr < -0.22 &&
         snap.telemetry.surgeKnots <= (isGaleBacking ? -0.52 : -0.35)
       ) {
         this.sternAlignKickActive = true;
@@ -717,13 +773,17 @@ export class SkipperClassifier {
       } else if (this.sternAlignKickActive) {
         softThrottle = 0.82;
         softHelm = -1.0;
-      } else if (snap.telemetry.surgeKnots <= (snap.trueWindKnots >= 20 ? -1.05 : -0.72)) {
+      } else if (
+        snap.telemetry.surgeKnots <=
+        (isGaleBacking ? -1.05 : hErr < -0.04 ? -0.42 : -0.72)
+      ) {
         // Glide on established sternway in Neutral so prop walk is zero and rudder steers cleanly!
         softThrottle = 0;
-        softHelm = clamp(-hErr * 3.0, -1, 1);
+        softHelm = clamp(-hErr * 3.2, -1, 1);
       } else {
+        const helmSign = snap.telemetry.surgeKnots > 0.12 ? 1 : -1;
         softThrottle = snap.trueWindKnots >= 20 ? -0.96 : -0.80;
-        softHelm = clamp(-hErr * 2.5, -1, 1);
+        softHelm = clamp(helmSign * hErr * 2.5, -1, 1);
       }
     } else {
       this.sternAlignKickActive = false;

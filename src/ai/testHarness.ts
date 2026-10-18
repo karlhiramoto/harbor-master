@@ -46,6 +46,8 @@ export interface SelfPlayStageResult {
   fenderKisses: number;
   finalDistanceToBerthM: number;
   finalHeadingErrorDeg: number;
+  controlChangesCount: number;
+  maxChangesPerSecond: number;
   phaseCounts: Record<ManeuverPhase, number>;
   incidents: ScoreIncident[];
   telemetryTrace: TelemetryTraceEntry[];
@@ -57,7 +59,7 @@ export interface SelfPlayRunOptions {
   mode?: ControllerMode;
   /** Maximum simulated seconds before timeout (default 85s) */
   maxSimSeconds?: number;
-  /** Classifier decision frequency in Hz (default 15 Hz -> every 4 physics substeps) */
+  /** Classifier decision frequency in Hz (default 1 Hz -> at most 1 change per second, human-like) */
   controlHz?: number;
   /** Optional custom classifier instance (e.g., with trained MLP weights) */
   classifier?: SkipperClassifier;
@@ -78,12 +80,13 @@ export async function runStageSelfPlay(
   options: SelfPlayRunOptions = {}
 ): Promise<SelfPlayStageResult> {
   const mode = options.mode ?? 'hybrid-classifier';
-  const maxSimSeconds = options.maxSimSeconds ?? 85;
-  const controlHz = options.controlHz ?? 10;
+  const maxSimSeconds = options.maxSimSeconds ?? 100;
+  const controlHz = Math.min(1, options.controlHz ?? 1);
   const controlDt = 1 / controlHz;
 
   const world = options.world ?? (await MarinaPhysicsWorld.create());
   const classifier = options.classifier ?? new SkipperClassifier();
+  classifier.reset();
 
   world.rebuildWorld({
     vesselId: stage.vesselId,
@@ -120,6 +123,9 @@ export async function runStageSelfPlay(
   let simSec = 0;
   let nextTraceSec = 0;
   let lastPrediction: ClassifierPrediction | null = null;
+  let controlChangesCount = 0;
+  const changeTimestampsSec: number[] = [];
+  let prevControls = { throttle: 0, helm: 0, bowThruster: 0 };
 
   while (simSec < maxSimSeconds) {
     const snap = world.getSnapshot();
@@ -130,6 +136,17 @@ export async function runStageSelfPlay(
     const pred = classifier.predict(snap, world.marina, mode, controlDt);
     lastPrediction = pred;
     phaseCounts[pred.phase] += 1;
+
+    // Count actual control changes and record timestamp
+    if (
+      Math.abs(pred.controls.throttle - prevControls.throttle) > 1e-4 ||
+      Math.abs(pred.controls.helm - prevControls.helm) > 1e-4 ||
+      Math.abs(pred.controls.bowThruster - prevControls.bowThruster) > 1e-4
+    ) {
+      controlChangesCount += 1;
+      changeTimestampsSec.push(snap.elapsedSec);
+      prevControls = { ...pred.controls };
+    }
 
     // Apply fender rig recommendation
     if (pred.recommendedFenderRig !== snap.fenderRig) {
@@ -148,8 +165,8 @@ export async function runStageSelfPlay(
       world.toggleSpringLine();
     }
 
-    // Record Behavior Cloning training sample (every 0.2s)
-    if (trainingSamples.length < 400 && Math.round(simSec * controlHz) % 3 === 0) {
+    // Record Behavior Cloning training sample (every 1.0s decision step)
+    if (trainingSamples.length < 400) {
       trainingSamples.push({
         features: [...pred.features.vector],
         phaseIdx: Math.max(0, MANEUVER_PHASES.indexOf(pred.phase)),
@@ -180,13 +197,16 @@ export async function runStageSelfPlay(
       });
     }
 
-    // Step world in <= 0.05s chunks so MarinaPhysicsWorld.stepFrame never clamps dt
+    // Step world in <= 0.05s chunks for the full 1.0s human decision interval
     let remDt = controlDt;
     while (remDt > 1e-5) {
       const stepChunk = Math.min(0.05, remDt);
       world.stepFrame(stepChunk);
       remDt -= stepChunk;
       const midSnap = world.getSnapshot();
+      if (midSnap.dockingChecklist.readyToMoor && !midSnap.completionReport) {
+        world.toggleSpringLine();
+      }
       if (midSnap.completionReport || midSnap.gameOver) {
         break;
       }
@@ -217,6 +237,21 @@ export async function runStageSelfPlay(
     });
   }
 
+  // Compute maximum control changes in any sliding 1.0-second window (excluding t = 0)
+  let maxChangesPerSecond = 0;
+  for (let i = 0; i < changeTimestampsSec.length; i++) {
+    const tStart = changeTimestampsSec[i];
+    let countInWindow = 0;
+    for (let j = i; j < changeTimestampsSec.length; j++) {
+      if (changeTimestampsSec[j] - tStart < 0.999) {
+        countInWindow += 1;
+      } else {
+        break;
+      }
+    }
+    maxChangesPerSecond = Math.max(maxChangesPerSecond, countInWindow);
+  }
+
   return {
     stageNumber: stage.stageNumber,
     stageId: stage.id,
@@ -232,6 +267,8 @@ export async function runStageSelfPlay(
     fenderKisses: report ? report.fenderKissesCount : 0,
     finalDistanceToBerthM: Number(finalDistM.toFixed(2)),
     finalHeadingErrorDeg: Number(finalSnap.dockingChecklist.headingErrorDeg.toFixed(1)),
+    controlChangesCount,
+    maxChangesPerSecond,
     phaseCounts,
     incidents,
     telemetryTrace,

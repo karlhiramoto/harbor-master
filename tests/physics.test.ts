@@ -9,9 +9,11 @@ import {
 } from '../src/physics/vessels';
 import {
   computeHydrodynamicStep,
+  stepPropellerInertia,
   clampWindKnots,
   windFromDegToWorldVelocity,
 } from '../src/physics/hydrodynamics';
+import { createMarinaLayout } from '../src/physics/marina';
 import { DockingScorer } from '../src/physics/scoring';
 import { MarinaPhysicsWorld } from '../src/physics/world';
 import { KeyboardController } from '../src/input/keyboardController';
@@ -308,5 +310,62 @@ describe('Real-Life Marine Physics & 4-Fender Scoring Suite', () => {
     expect(stage4).toBeDefined();
     expect(stage4!.startX).toBeLessThanOrEqual(-22);
     expect(stage4!.startHeadingRad).toBe(0);
+  });
+
+  it('Models physical propeller rotational inertia when stepping throttle and reversing shaft direction', async () => {
+    const spec = VESSEL_SPECS.sailboat12m;
+    // 1. Direct step from 0 -> +1.0 over 0.1s ramps smoothly instead of jumping instantaneously to +1.0
+    const propAfter100ms = stepPropellerInertia(0, 1.0, spec, 0.1);
+    expect(propAfter100ms).toBeGreaterThan(0.1);
+    expect(propAfter100ms).toBeLessThan(0.25);
+
+    // 2. Crash-stop reversal from +1.0 -> -1.0 must spin down through 0 before generating reverse thrust
+    let prop = 1.0;
+    for (let i = 0; i < 6; i++) {
+      prop = stepPropellerInertia(prop, -1.0, spec, 0.05); // 0.30s total
+    }
+    // After 0.30s on a heavy 12m keelboat shaft, prop has slowed down significantly but is still > -0.2
+    expect(prop).toBeLessThan(0.6);
+    expect(prop).toBeGreaterThan(-0.2);
+
+    // 3. Verify live world simulation uses effectiveProp with inertia
+    const world = await MarinaPhysicsWorld.create();
+    world.rebuildWorld({
+      vesselId: 'sailboat12m',
+      fenderRig: 'midships',
+      berthId: 'east-seawall',
+      startX: 16.0,
+      startY: 0,
+      startHeadingRad: -Math.PI / 2,
+      trueWindKnots: 0,
+      windFromDeg: 0,
+      gustiness: 0,
+      enableTraffic: false,
+    });
+    world.setControls({ throttle: 1.0, helm: 0, bowThruster: 0 });
+    const snapEarly = world.stepFrame(0.05);
+    expect(snapEarly.telemetry.effectiveProp).toBeGreaterThan(0);
+    expect(snapEarly.telemetry.effectiveProp).toBeLessThan(0.2);
+
+    let snapLate = snapEarly;
+    for (let i = 0; i < 30; i++) {
+      snapLate = world.stepFrame(0.05);
+    }
+    expect(snapLate.telemetry.effectiveProp).toBeGreaterThan(0.85);
+    expect(snapLate.telemetry.propThrustBody.x).toBeGreaterThan(
+      snapEarly.telemetry.propThrustBody.x * 4
+    );
+  });
+
+  it('Downsizes the bottom-right stationary red boat (moored-east-south) to 7m and widens the Level 5 East Seawall berth', () => {
+    const marina = createMarinaLayout();
+    const redBoat = marina.mooredBoats.find((b) => b.id === 'moored-east-south');
+    expect(redBoat).toBeDefined();
+    expect(redBoat!.hullColor).toBe('#6d2e46');
+    expect(redBoat!.vesselId).toBe('outboard7m');
+    expect(VESSEL_SPECS[redBoat!.vesselId].loa).toBe(7.0);
+
+    const eastBerth = marina.berths['east-seawall'];
+    expect(eastBerth.length).toBeGreaterThanOrEqual(14.5);
   });
 });

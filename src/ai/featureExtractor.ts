@@ -386,7 +386,14 @@ export function computeCorridorPlan(
     // East Seawall pocket: x in [19.7, 25.5], y in [-6.6, 6.8], targetHeadingRad = -PI/2 (allowOppositeHeading: true)
     const pocketX = 21.8;
     const pocketY = 0.2;
-    const fairwayWp = { x: 15.5, y: fairwayLaneY * 0.6, label: 'East Fairway Channel' };
+    const fairwayWp =
+      snap.enableTraffic && px < 14.5
+        ? {
+            x: Math.min(15.5, px + 6.0),
+            y: py < 0.2 ? 0.75 : clamp(fairwayLaneY * 0.75, 0.25, 0.75),
+            label: 'East Fairway Channel',
+          }
+        : { x: 15.5, y: fairwayLaneY * 0.6, label: 'East Fairway Channel' };
     const entryWp = { x: 21.2, y: -0.4, label: 'Seawall Pocket Entry' };
     const berthWp = { x: pocketX, y: pocketY, label: 'East Seawall Berth' };
     waypoints.push(fairwayWp, entryWp, berthWp);
@@ -435,7 +442,7 @@ export function computeCorridorPlan(
 
     const northHeadingErr = Math.abs(normalizeAngleRad(-Math.PI / 2 - heading));
     const alignedForMedBacking =
-      heading <= (snap.enableTraffic ? -1.38 : -0.78) && heading >= -2.35;
+      heading <= (snap.enableTraffic ? -0.72 : -1.05) && heading >= -2.55;
     // On Stage 10 (enableTraffic), hold horizontal heading (~0 rad) in the center fairway lane
     // until tender-1 (Pass 1 westbound at y = 3.1) passes West of our CoG (elapsedSec ~ 16.2s);
     const tenderPass1Approaching =
@@ -444,7 +451,7 @@ export function computeCorridorPlan(
       snap.movingHazards.some((hz) => hz.y > 1.5 && hz.x > px - 3.2);
     const needFairwayTransit = snap.enableTraffic
       ? (px < -10.5 || tenderPass1Approaching) && Math.abs(heading) < 0.65
-      : px > -4.3 && !(alignedForMedBacking && px < -2.0);
+      : px > -4.9 && !(alignedForMedBacking && px < -2.0);
 
     if (!snap.enableTraffic && px > 6.5 && Math.abs(normalizeAngleRad(Math.PI - heading)) > 0.52) {
       // Stage 7 starts at x=12 facing North (-PI/2): rotate Clockwise (-90 -> 0 -> +90 -> 180)

@@ -68,6 +68,10 @@ export interface VesselSpec {
   forwardPropWalkStbdN: number;
   /** Fraction of forward prop slipstream washing directly across rudder (0..1) */
   propWashRudderCoupling: number;
+  /** First-order rotational inertia time constant of propeller shaft & slipstream (seconds) */
+  propInertiaTauSec: number;
+  /** Maximum propeller shaft fractional change per second when spooling or reversing gear (1/s) */
+  propMaxSlewPerSec: number;
   /** Linear & quadratic surge drag coefficients */
   surgeDragLinear: number;
   surgeDragQuad: number;
@@ -124,6 +128,8 @@ export const VESSEL_SPECS: Record<VesselId, VesselSpec> = {
     reversePropWalkPortN: 65,
     forwardPropWalkStbdN: 25,
     propWashRudderCoupling: 0,
+    propInertiaTauSec: 0.28,
+    propMaxSlewPerSec: 2.4,
     surgeDragLinear: 165,
     surgeDragQuad: 95,
     swayDragLinear: 680,
@@ -180,6 +186,8 @@ export const VESSEL_SPECS: Record<VesselId, VesselSpec> = {
     reversePropWalkPortN: 110,
     forwardPropWalkStbdN: 40,
     propWashRudderCoupling: 0,
+    propInertiaTauSec: 0.35,
+    propMaxSlewPerSec: 2.0,
     surgeDragLinear: 295,
     surgeDragQuad: 175,
     swayDragLinear: 1450,
@@ -236,6 +244,8 @@ export const VESSEL_SPECS: Record<VesselId, VesselSpec> = {
     reversePropWalkPortN: 1420,
     forwardPropWalkStbdN: 190,
     propWashRudderCoupling: 0.72,
+    propInertiaTauSec: 0.50,
+    propMaxSlewPerSec: 1.5,
     surgeDragLinear: 440,
     surgeDragQuad: 270,
     swayDragLinear: 6200,

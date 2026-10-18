@@ -144,10 +144,15 @@ describe('Autonomous Self-Play Test Harness & Skipper Classifier', () => {
         completed: r.completed,
         gameOver: r.gameOver,
         damage: r.repairCostUsd,
-        tail: r.telemetryTrace.slice(-4),
+        trace: r.telemetryTrace.filter((_, i) => i % 4 === 0 || i >= r.telemetryTrace.length - 4),
       })),
       `\n${ablation.hybridSummary.summaryTable}\n`
     ).toEqual([]);
+
+    // Verify human-paced control rate: at most 1 control change per second (<= 1 Hz)
+    for (const res of ablation.hybridSummary.results) {
+      expect(res.maxChangesPerSecond).toBeLessThanOrEqual(1);
+    }
   }, 30_000);
 
   it('generalizes under wind speed and wind direction perturbations on Stage 1 and Stage 3', async () => {
