@@ -318,7 +318,7 @@ async function bootstrap(): Promise<void> {
 
     const curSnap = world.getSnapshot();
     if (autoPilotActive && !curSnap.completionReport && !curSnap.gameOver) {
-      const pred = skipper.predict(curSnap, world.marina, 'hybrid-classifier', dtSec);
+      const pred = skipper.predict(curSnap, world.marina, 'hybrid-classifier');
       if (pred.recommendedFenderRig !== curSnap.fenderRig) {
         world.setFenderRig(pred.recommendedFenderRig);
       }

@@ -81,8 +81,12 @@ export async function runStageSelfPlay(
 ): Promise<SelfPlayStageResult> {
   const mode = options.mode ?? 'hybrid-classifier';
   const maxSimSeconds = options.maxSimSeconds ?? 100;
-  const controlHz = Math.min(1, options.controlHz ?? 1);
+  const controlHz = options.controlHz ?? 1;
+  if (!Number.isFinite(controlHz) || controlHz <= 0 || controlHz > 1) {
+    throw new Error(`Invalid controlHz=${controlHz}: human-paced control rate must be in (0, 1] Hz.`);
+  }
   const controlDt = 1 / controlHz;
+  const frameDt = 1 / 60;
 
   const world = options.world ?? (await MarinaPhysicsWorld.create());
   const classifier = options.classifier ?? new SkipperClassifier();
@@ -120,14 +124,14 @@ export async function runStageSelfPlay(
   const telemetryTrace: TelemetryTraceEntry[] = [];
   const trainingSamples: TrainingSample[] = [];
 
-  let simSec = 0;
   let nextTraceSec = 0;
+  let nextSampleSec = 0;
   let lastPrediction: ClassifierPrediction | null = null;
   let controlChangesCount = 0;
   const changeTimestampsSec: number[] = [];
   let prevControls = { throttle: 0, helm: 0, bowThruster: 0 };
 
-  while (simSec < maxSimSeconds) {
+  while (world.getSnapshot().elapsedSec < maxSimSeconds - 1e-6) {
     const snap = world.getSnapshot();
     if (snap.completionReport || snap.gameOver) {
       break;
@@ -135,7 +139,6 @@ export async function runStageSelfPlay(
 
     const pred = classifier.predict(snap, world.marina, mode, controlDt);
     lastPrediction = pred;
-    phaseCounts[pred.phase] += 1;
 
     // Count actual control changes and record timestamp
     if (
@@ -156,8 +159,8 @@ export async function runStageSelfPlay(
     // Apply continuous controls
     world.setControls(pred.controls);
 
-    // Apply idempotent deck commands
-    if (pred.deckCommand === 'moor-complete' && snap.dockingChecklist.readyToMoor) {
+    // Apply idempotent deck commands (exact same path as main.ts)
+    if (pred.deckCommand === 'moor-complete') {
       world.toggleSpringLine();
     } else if (pred.deckCommand === 'release-spring' && snap.activeSpringLine) {
       world.toggleSpringLine();
@@ -165,23 +168,27 @@ export async function runStageSelfPlay(
       world.toggleSpringLine();
     }
 
-    // Record Behavior Cloning training sample (every 1.0s decision step)
-    if (trainingSamples.length < 400) {
-      trainingSamples.push({
-        features: [...pred.features.vector],
-        phaseIdx: Math.max(0, MANEUVER_PHASES.indexOf(pred.phase)),
-        throttleIdx: Math.max(0, THROTTLE_CLASSES.indexOf(pred.throttleClass)),
-        helmIdx: Math.max(0, HELM_CLASSES.indexOf(pred.helmClass)),
-        thrusterIdx: Math.max(0, THRUSTER_CLASSES.indexOf(pred.thrusterClass)),
-        deckIdx: Math.max(0, DECK_ACTION_CLASSES.indexOf(pred.deckActionClass)),
-      });
+    // Record Behavior Cloning training sample & phase count once per decision step
+    if (snap.elapsedSec >= nextSampleSec - 0.5 / 120) {
+      nextSampleSec += controlDt;
+      phaseCounts[pred.phase] += 1;
+      if (trainingSamples.length < 400) {
+        trainingSamples.push({
+          features: [...pred.features.vector],
+          phaseIdx: Math.max(0, MANEUVER_PHASES.indexOf(pred.phase)),
+          throttleIdx: Math.max(0, THROTTLE_CLASSES.indexOf(pred.throttleClass)),
+          helmIdx: Math.max(0, HELM_CLASSES.indexOf(pred.helmClass)),
+          thrusterIdx: Math.max(0, THRUSTER_CLASSES.indexOf(pred.thrusterClass)),
+          deckIdx: Math.max(0, DECK_ACTION_CLASSES.indexOf(pred.deckActionClass)),
+        });
+      }
     }
 
     // Record 1 Hz diagnostic trace
-    if (simSec >= nextTraceSec) {
+    if (snap.elapsedSec >= nextTraceSec - 0.5 / 120) {
       nextTraceSec += 1.0;
       telemetryTrace.push({
-        timeSec: Number(simSec.toFixed(1)),
+        timeSec: Number(snap.elapsedSec.toFixed(1)),
         x: Number(snap.playerX.toFixed(2)),
         y: Number(snap.playerY.toFixed(2)),
         headingDeg: Math.round((snap.playerHeadingRad * 180) / Math.PI),
@@ -197,21 +204,11 @@ export async function runStageSelfPlay(
       });
     }
 
-    // Step world in <= 0.05s chunks for the full 1.0s human decision interval
-    let remDt = controlDt;
-    while (remDt > 1e-5) {
-      const stepChunk = Math.min(0.05, remDt);
-      world.stepFrame(stepChunk);
-      remDt -= stepChunk;
-      const midSnap = world.getSnapshot();
-      if (midSnap.dockingChecklist.readyToMoor && !midSnap.completionReport) {
-        world.toggleSpringLine();
-      }
-      if (midSnap.completionReport || midSnap.gameOver) {
-        break;
-      }
+    if (world.getSnapshot().completionReport || world.getSnapshot().gameOver) {
+      break;
     }
-    simSec += controlDt;
+
+    world.stepFrame(frameDt);
   }
 
   const finalSnap = world.getSnapshot();

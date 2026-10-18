@@ -488,9 +488,9 @@ export class MarinaPhysicsWorld {
     const clampedFrameDt = Math.min(0.05, Math.max(0, frameDtSec));
     this.accumulator += clampedFrameDt;
 
-    while (this.accumulator >= FIXED_DT) {
+    while (this.accumulator >= FIXED_DT - 1e-9) {
       this.stepPhysicsSubstep(FIXED_DT);
-      this.accumulator -= FIXED_DT;
+      this.accumulator = Math.max(0, this.accumulator - FIXED_DT);
       if (this.completionReport || this.gameOver) {
         break;
       }
