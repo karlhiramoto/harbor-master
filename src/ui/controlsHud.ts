@@ -84,6 +84,7 @@ export interface HudCallbacks {
   onZoomDelta: (delta: number) => number;
   onResetZoom: () => number;
   onToggleMute: () => boolean;
+  onToggleAutoPilot?: () => boolean;
 }
 
 export class ControlsHud {
@@ -109,6 +110,7 @@ export class ControlsHud {
   private readonly thrusterRowEl: HTMLElement;
   private readonly lassoBtnEl: HTMLButtonElement;
   private readonly zoomResetBtn: HTMLButtonElement;
+  private readonly autoPilotBtn: HTMLButtonElement;
   private readonly rigBtns = new Map<FenderRigMode, HTMLButtonElement>();
   private readonly modalHostEl: HTMLElement;
 
@@ -141,6 +143,11 @@ export class ControlsHud {
 
     const actions = el('div', 'top-actions');
     const stagesBtn = btn('Stages / Wind', 'hud-btn primary', () => this.openSetupModal());
+    this.autoPilotBtn = btn('🤖 Auto-Pilot: OFF (P)', 'hud-btn', () => {
+      if (!this.callbacks.onToggleAutoPilot) return;
+      const on = this.callbacks.onToggleAutoPilot();
+      this.setAutoPilotActive(on);
+    });
     const retryBtn = btn('Retry (R)', 'hud-btn', () => this.callbacks.onResetStage());
     const xrayBtn = btn('X-Ray: ON', 'hud-btn active-toggle', () => {
       const on = this.callbacks.onToggleXRay();
@@ -152,7 +159,7 @@ export class ControlsHud {
       muteBtn.textContent = muted ? 'Sound: Muted' : 'Sound: ON';
     });
     const helpBtn = btn('? Help (H)', 'hud-btn', () => this.openHelpModal());
-    actions.append(stagesBtn, retryBtn, xrayBtn, muteBtn, helpBtn);
+    actions.append(stagesBtn, this.autoPilotBtn, retryBtn, xrayBtn, muteBtn, helpBtn);
     topBar.append(brandGroup, strip, actions);
 
     // Center Live Briefing, Live Docking Checklist Pill & Incident Banner
@@ -356,6 +363,16 @@ export class ControlsHud {
     const pct = Math.round(zoom * 100);
     this.zoomResetBtn.textContent = `${pct}%`;
     this.zoomResetBtn.classList.toggle('active-toggle', pct !== 100);
+  }
+
+  public setAutoPilotActive(active: boolean, statusLabel?: string): void {
+    this.autoPilotBtn.textContent = active ? '🤖 Auto-Pilot: ON (P)' : '🤖 Auto-Pilot: OFF (P)';
+    this.autoPilotBtn.classList.toggle('active-toggle', active);
+    if (active && statusLabel) {
+      this.briefingEl.textContent = statusLabel;
+    } else if (!active) {
+      this.briefingEl.textContent = this.currentStage.briefing;
+    }
   }
 
   public showIncidentToast(incident: ScoreIncident): void {

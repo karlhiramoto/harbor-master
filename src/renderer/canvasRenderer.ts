@@ -3,6 +3,13 @@ import { VESSEL_SPECS, VesselSpec, FenderMount } from '../physics/vessels';
 import { windFromDegToWorldVelocity } from '../physics/hydrodynamics';
 import { SimulationSnapshot } from '../physics/world';
 
+export interface AutoPilotOverlayData {
+  activeWaypoint: { x: number; y: number; label: string };
+  desiredHeadingRad: number;
+  predictedTrajectory: Array<{ x: number; y: number; headingRad: number; speedKnots: number }>;
+  phaseLabel: string;
+}
+
 interface WaterParticle {
   x: number;
   y: number;
@@ -27,6 +34,7 @@ export class MarinaCanvasRenderer {
   private userZoom = 1.0;
   private boatUpCamera = false;
   private showForceXRay = true;
+  private autoPilotOverlay: AutoPilotOverlayData | null = null;
   private shakeIntensity = 0;
   private particles: WaterParticle[] = [];
   private windStreaks: WindStreak[] = [];
@@ -70,6 +78,10 @@ export class MarinaCanvasRenderer {
 
   public isShowForceXRay(): boolean {
     return this.showForceXRay;
+  }
+
+  public setAutoPilotOverlay(overlay: AutoPilotOverlayData | null): void {
+    this.autoPilotOverlay = overlay;
   }
 
   public triggerHullShake(intensity = 1.0): void {
@@ -187,6 +199,10 @@ export class MarinaCanvasRenderer {
 
     // 6. Best Ghost Trail & Current Wake Path
     this.drawGhostTrails(ctx, snap);
+
+    if (this.autoPilotOverlay) {
+      this.drawAutoPilotOverlay(ctx, snap, this.autoPilotOverlay);
+    }
 
     // 7. Prop Wash & Thruster Foam Particles
     for (const p of this.particles) {
@@ -394,6 +410,48 @@ export class MarinaCanvasRenderer {
       });
       ctx.stroke();
     }
+  }
+
+  private drawAutoPilotOverlay(
+    ctx: CanvasRenderingContext2D,
+    snap: SimulationSnapshot,
+    overlay: AutoPilotOverlayData
+  ): void {
+    ctx.save();
+    // 1. Predicted 1.5s rollout trajectory arc
+    if (overlay.predictedTrajectory.length > 0) {
+      ctx.strokeStyle = 'rgba(34, 211, 238, 0.85)';
+      ctx.lineWidth = 0.16;
+      ctx.setLineDash([0.32, 0.22]);
+      ctx.beginPath();
+      ctx.moveTo(snap.playerX, snap.playerY);
+      for (const pt of overlay.predictedTrajectory) {
+        ctx.lineTo(pt.x, pt.y);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      const lastPt = overlay.predictedTrajectory[overlay.predictedTrajectory.length - 1];
+      ctx.fillStyle = '#22d3ee';
+      ctx.beginPath();
+      ctx.arc(lastPt.x, lastPt.y, 0.24, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 2. Active Corridor Waypoint Beacon
+    const wp = overlay.activeWaypoint;
+    const pulse = 0.5 + 0.5 * Math.sin(snap.elapsedSec * 5.0);
+    ctx.strokeStyle = 'rgba(52, 211, 153, 0.88)';
+    ctx.lineWidth = 0.12;
+    ctx.beginPath();
+    ctx.arc(wp.x, wp.y, 0.55 + pulse * 0.25, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.fillStyle = 'rgba(52, 211, 153, 0.9)';
+    ctx.beginPath();
+    ctx.arc(wp.x, wp.y, 0.18, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 
   private drawDocksAndPilings(
