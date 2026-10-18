@@ -193,8 +193,8 @@ export const CAMPAIGN_STAGES: ReadonlyArray<CampaignStage> = [
     windFromDeg: 255,
     gustiness: 0.25,
     enableTraffic: true,
-    startX: -18,
-    startY: -0.8,
+    startX: -23.5,
+    startY: 0.4,
     startHeadingRad: 0,
     briefing:
       'Final Exam: 25 kn westerly gale screaming down the channel! Use prop walk, quarter fenders, yacht wind shadow, and cleat spring lines for an S-Rank landing.',

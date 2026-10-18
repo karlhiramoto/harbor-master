@@ -52,6 +52,7 @@ export interface HydroTelemetry {
   surgeKnots: number;
   swayKnots: number;
   speedKnots: number;
+  yawRateRadSec: number;
   helmAngleDeg: number;
   /** Dynamic hull pivot point forward of midships (m) */
   pivotPointLocalX: number;
@@ -79,6 +80,11 @@ export function clampWindKnots(knots: number): number {
 export function normalizeCompassDeg(deg: number): number {
   if (!Number.isFinite(deg)) return 0;
   return ((deg % 360) + 360) % 360;
+}
+
+export function normalizeAngleRad(rad: number): number {
+  if (!Number.isFinite(rad)) return 0;
+  return (((rad + Math.PI) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
 }
 
 /**
@@ -182,8 +188,8 @@ export function computeHydrodynamicStep(
       throttle > 0 ? Math.sqrt((throttle * spec.maxForwardThrustN * spec.propWashRudderCoupling) / 520) : 0;
 
     let rudderLateralForceN = 0;
-    if (u >= -0.05) {
-      const effectiveAftFlowMs = Math.max(0, u) + forwardPropWashFlowMs;
+    if (u >= -0.05 || forwardPropWashFlowMs > Math.abs(u)) {
+      const effectiveAftFlowMs = Math.max(0, u + forwardPropWashFlowMs);
       // Rudder angled right (+helmRad) deflects water to Port (-Y) -> stern pushes Port (-Y), bow turns Right (+r)
       rudderLateralForceN = -effectiveAftFlowMs * effectiveAftFlowMs * 640 * Math.sin(helmRad);
     } else {
@@ -264,6 +270,7 @@ export function computeHydrodynamicStep(
       surgeKnots: u * MS_TO_KNOTS,
       swayKnots: v * MS_TO_KNOTS,
       speedKnots,
+      yawRateRadSec: r,
       helmAngleDeg: helm * spec.maxHelmDeg,
       pivotPointLocalX,
       propThrustBody: { x: propX, y: propY - propWalkLat, torque: propTorque },

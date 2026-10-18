@@ -6,6 +6,7 @@ import { MarineSoundEngine } from './audio/soundEngine';
 import { ControlsHud } from './ui/controlsHud';
 import { KeyboardController, stepThrottleWithNeutralDetent } from './input/keyboardController';
 import { clamp } from './physics/hydrodynamics';
+import { SkipperClassifier } from './ai/skipperClassifier';
 
 async function bootstrap(): Promise<void> {
   const root = document.getElementById('app-root');
@@ -24,8 +25,19 @@ async function bootstrap(): Promise<void> {
   const renderer = new MarinaCanvasRenderer(canvas);
   const sound = new MarineSoundEngine();
   const kb = new KeyboardController();
+  const skipper = new SkipperClassifier();
 
   let activeStage: CampaignStage = CAMPAIGN_STAGES[0];
+  let autoPilotActive = false;
+
+  const setAutoPilot = (active: boolean): boolean => {
+    autoPilotActive = active;
+    if (!active) {
+      renderer.setAutoPilotOverlay(null);
+    }
+    hud.setAutoPilotActive(active);
+    return active;
+  };
 
   const loadCampaignStage = (stage: CampaignStage): void => {
     activeStage = stage;
@@ -43,30 +55,38 @@ async function bootstrap(): Promise<void> {
       enableTraffic: stage.enableTraffic,
     });
     hud.setCurrentStageMeta(stage.title, stage.briefing, stage);
+    if (autoPilotActive) {
+      hud.setAutoPilotActive(true);
+    }
   };
 
   const hud = new ControlsHud(shell, canvasViewport, {
     onThrottleChange: (throttle) => {
       sound.unlock();
+      if (autoPilotActive) setAutoPilot(false);
       world.setControls({ throttle });
     },
     onThrottleStep: (delta) => {
       sound.unlock();
+      if (autoPilotActive) setAutoPilot(false);
       const cur = world.getSnapshot().controls.throttle;
       world.setControls({ throttle: stepThrottleWithNeutralDetent(cur, delta) });
     },
     onHelmChange: (helm) => {
       sound.unlock();
+      if (autoPilotActive) setAutoPilot(false);
       world.setControls({ helm });
     },
     onHelmStep: (delta) => {
       sound.unlock();
+      if (autoPilotActive) setAutoPilot(false);
       const cur = world.getSnapshot().controls.helm;
       const stepped = clamp(cur + delta, -1, 1);
       world.setControls({ helm: Math.abs(stepped) < 0.04 ? 0 : stepped });
     },
     onBowThrusterChange: (bowThruster) => {
       sound.unlock();
+      if (autoPilotActive) setAutoPilot(false);
       world.setControls({ bowThruster });
     },
     onSelectFenderRig: (rig) => {
@@ -125,6 +145,10 @@ async function bootstrap(): Promise<void> {
       const next = !sound.isMuted();
       sound.setMuted(next);
       return next;
+    },
+    onToggleAutoPilot: () => {
+      sound.unlock();
+      return setAutoPilot(!autoPilotActive);
     },
   });
 
@@ -262,8 +286,14 @@ async function bootstrap(): Promise<void> {
       }
 
       sound.unlock();
+      if (ev.code === 'KeyP' || ev.key === 'p' || ev.key === 'P') {
+        ev.preventDefault();
+        setAutoPilot(!autoPilotActive);
+        return;
+      }
       const { handled, nextControls } = kb.handleKeyDown(ev, world.getSnapshot().controls);
       if (handled) {
+        if (autoPilotActive) setAutoPilot(false);
         world.setControls(nextControls);
       }
     },
@@ -284,9 +314,40 @@ async function bootstrap(): Promise<void> {
     const dtSec = Math.min(0.05, Math.max(0.001, (nowMs - prevTimeMs) / 1000));
     prevTimeMs = nowMs;
 
-    const pointerThrusterHeld = Boolean(document.querySelector('.thruster-btn.pressing'));
-    const nextControls = kb.step(dtSec, world.getSnapshot().controls, pointerThrusterHeld);
-    world.setControls(nextControls);
+    const curSnap = world.getSnapshot();
+    if (autoPilotActive && !curSnap.completionReport && !curSnap.gameOver) {
+      const pred = skipper.predict(curSnap, world.marina, 'hybrid-classifier', dtSec);
+      if (pred.recommendedFenderRig !== curSnap.fenderRig) {
+        world.setFenderRig(pred.recommendedFenderRig);
+      }
+      world.setControls(pred.controls);
+      if (pred.deckCommand === 'moor-complete') {
+        if (world.toggleSpringLine()) {
+          sound.playCleatLatch();
+        }
+      } else if (pred.deckCommand === 'latch-spring' && !curSnap.activeSpringLine) {
+        if (world.toggleSpringLine()) {
+          sound.playCleatLatch();
+        }
+      } else if (pred.deckCommand === 'release-spring' && curSnap.activeSpringLine) {
+        world.toggleSpringLine();
+      }
+      hud.setAutoPilotActive(true, pred.summaryLabel);
+      renderer.setAutoPilotOverlay({
+        activeWaypoint: pred.activeWaypoint,
+        desiredHeadingRad: pred.desiredHeadingRad,
+        predictedTrajectory: pred.predictedTrajectory,
+        phaseLabel: pred.summaryLabel,
+      });
+    } else {
+      if (!autoPilotActive) {
+        const pointerThrusterHeld = Boolean(document.querySelector('.thruster-btn.pressing'));
+        const nextControls = kb.step(dtSec, curSnap.controls, pointerThrusterHeld);
+        world.setControls(nextControls);
+      } else {
+        renderer.setAutoPilotOverlay(null);
+      }
+    }
 
     const snap = world.stepFrame(dtSec);
     renderer.render(snap, world.marina, dtSec);
