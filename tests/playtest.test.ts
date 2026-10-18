@@ -144,10 +144,15 @@ describe('Autonomous Self-Play Test Harness & Skipper Classifier', () => {
         completed: r.completed,
         gameOver: r.gameOver,
         damage: r.repairCostUsd,
-        tail: r.telemetryTrace.slice(-4),
+        trace: r.telemetryTrace.filter((_, i) => i % 4 === 0 || i >= r.telemetryTrace.length - 4),
       })),
       `\n${ablation.hybridSummary.summaryTable}\n`
     ).toEqual([]);
+
+    // Verify human-paced control rate: at most 1 control change per second (<= 1 Hz)
+    for (const res of ablation.hybridSummary.results) {
+      expect(res.maxChangesPerSecond).toBeLessThanOrEqual(1);
+    }
   }, 30_000);
 
   it('generalizes under wind speed and wind direction perturbations on Stage 1 and Stage 3', async () => {
@@ -167,5 +172,67 @@ describe('Autonomous Self-Play Test Harness & Skipper Classifier', () => {
     });
     expect(res3.completed).toBe(true);
     expect(res3.gameOver).toBe(false);
+  });
+
+  it('maintains identical 1.0s decision timing across 20 Hz and 60 Hz frame loops, trims held trajectory arcs, and rejects >1 Hz control rates', async () => {
+    const world20 = await MarinaPhysicsWorld.create();
+    const world60 = await MarinaPhysicsWorld.create();
+    const stage4 = CAMPAIGN_STAGES[3];
+
+    for (const w of [world20, world60]) {
+      w.rebuildWorld({
+        vesselId: stage4.vesselId,
+        fenderRig: stage4.recommendedRig,
+        berthId: stage4.berthId,
+        startX: stage4.startX,
+        startY: stage4.startY,
+        startHeadingRad: stage4.startHeadingRad,
+        trueWindKnots: stage4.trueWindKnots,
+        windFromDeg: stage4.windFromDeg,
+        gustiness: stage4.gustiness,
+        enableTraffic: stage4.enableTraffic,
+      });
+    }
+
+    const skipper20 = new SkipperClassifier();
+    const skipper60 = new SkipperClassifier();
+
+    const pred20At0 = skipper20.predict(world20.getSnapshot(), world20.marina);
+    const pred60At0 = skipper60.predict(world60.getSnapshot(), world60.marina);
+    expect(pred20At0.controls).toEqual(pred60At0.controls);
+    const initialTrajLen = pred60At0.predictedTrajectory.length;
+    expect(initialTrajLen).toBeGreaterThan(3);
+
+    world20.setControls(pred20At0.controls);
+    world60.setControls(pred60At0.controls);
+
+    // Step 20 frames of 0.05s vs 60 frames of 1/60s to reach t = 1.0s
+    for (let i = 0; i < 20; i++) {
+      world20.stepFrame(0.05);
+    }
+    let midWindowTrajLen = initialTrajLen;
+    for (let i = 0; i < 60; i++) {
+      if (i === 30) {
+        const heldPred = skipper60.predict(world60.getSnapshot(), world60.marina);
+        expect(heldPred.controls).toEqual(pred60At0.controls);
+        midWindowTrajLen = heldPred.predictedTrajectory.length;
+      }
+      world60.stepFrame(1 / 60);
+    }
+
+    // Held trajectory trims past points so the canvas arc never jumps backward behind the vessel
+    expect(midWindowTrajLen).toBeLessThan(initialTrajLen);
+
+    // Both loops reach exact t = 1.0s (120 substeps) and make the exact same t = 1.0s decision
+    expect(world20.getSnapshot().elapsedSec).toBeCloseTo(1.0, 6);
+    expect(world60.getSnapshot().elapsedSec).toBeCloseTo(1.0, 6);
+    const pred20At1 = skipper20.predict(world20.getSnapshot(), world20.marina);
+    const pred60At1 = skipper60.predict(world60.getSnapshot(), world60.marina);
+    expect(pred20At1.controls).toEqual(pred60At1.controls);
+
+    // Rejects super-human controlHz > 1
+    await expect(runStageSelfPlay(CAMPAIGN_STAGES[0], { world: world20, controlHz: 5 })).rejects.toThrow(
+      /human-paced control rate must be in \(0, 1\] Hz/
+    );
   });
 });

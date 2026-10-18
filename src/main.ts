@@ -32,6 +32,7 @@ async function bootstrap(): Promise<void> {
 
   const setAutoPilot = (active: boolean): boolean => {
     autoPilotActive = active;
+    skipper.reset();
     if (!active) {
       renderer.setAutoPilotOverlay(null);
     }
@@ -41,6 +42,7 @@ async function bootstrap(): Promise<void> {
 
   const loadCampaignStage = (stage: CampaignStage): void => {
     activeStage = stage;
+    skipper.reset();
     hud.closeAnyModal();
     world.rebuildWorld({
       vesselId: stage.vesselId,
@@ -316,7 +318,7 @@ async function bootstrap(): Promise<void> {
 
     const curSnap = world.getSnapshot();
     if (autoPilotActive && !curSnap.completionReport && !curSnap.gameOver) {
-      const pred = skipper.predict(curSnap, world.marina, 'hybrid-classifier', dtSec);
+      const pred = skipper.predict(curSnap, world.marina, 'hybrid-classifier');
       if (pred.recommendedFenderRig !== curSnap.fenderRig) {
         world.setFenderRig(pred.recommendedFenderRig);
       }

@@ -18,6 +18,7 @@ import {
   clamp,
   clampWindKnots,
   normalizeCompassDeg,
+  stepPropellerInertia,
   windFromDegToWorldVelocity,
 } from './hydrodynamics';
 import {
@@ -133,6 +134,7 @@ export class MarinaPhysicsWorld {
   private enableTraffic = false;
 
   private controls: ControlInputs = { throttle: 0, helm: 0, bowThruster: 0 };
+  private effectiveProp = 0;
   private telemetry!: HydroTelemetry;
   private elapsedSec = 0;
   private accumulator = 0;
@@ -191,6 +193,7 @@ export class MarinaPhysicsWorld {
     this.enableTraffic = Boolean(config.enableTraffic);
 
     this.controls = { throttle: 0, helm: 0, bowThruster: 0 };
+    this.effectiveProp = 0;
     this.elapsedSec = 0;
     this.accumulator = 0;
     this.dockingHoldSec = 0;
@@ -347,7 +350,7 @@ export class MarinaPhysicsWorld {
     const initHydro = computeHydrodynamicStep(
       spec,
       config.startHeadingRad,
-      { u: 0, v: 0, r: 0 },
+      { u: 0, v: 0, r: 0, effectiveProp: 0 },
       this.controls,
       {
         trueWindKnots: this.trueWindKnots,
@@ -485,9 +488,9 @@ export class MarinaPhysicsWorld {
     const clampedFrameDt = Math.min(0.05, Math.max(0, frameDtSec));
     this.accumulator += clampedFrameDt;
 
-    while (this.accumulator >= FIXED_DT) {
+    while (this.accumulator >= FIXED_DT - 1e-9) {
       this.stepPhysicsSubstep(FIXED_DT);
-      this.accumulator -= FIXED_DT;
+      this.accumulator = Math.max(0, this.accumulator - FIXED_DT);
       if (this.completionReport || this.gameOver) {
         break;
       }
@@ -539,10 +542,13 @@ export class MarinaPhysicsWorld {
       1 + this.gustiness * (0.65 * Math.sin(this.elapsedSec * 0.72) + 0.35 * Math.cos(this.elapsedSec * 1.65));
     const shelterFactor = this.computeShelterFactor(pos.x, pos.y);
 
+    // Advance physical propeller shaft rotational inertia toward commanded throttle
+    this.effectiveProp = stepPropellerInertia(this.effectiveProp, this.controls.throttle, spec, dt);
+
     const hydro = computeHydrodynamicStep(
       spec,
       heading,
-      { u, v, r: angvel },
+      { u, v, r: angvel, effectiveProp: this.effectiveProp },
       this.controls,
       {
         trueWindKnots: this.trueWindKnots,

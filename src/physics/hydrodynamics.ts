@@ -31,6 +31,8 @@ export interface BodyVelocityState {
   v: number;
   /** Yaw angular velocity in rad/s (+ clockwise / turning starboard, - turning port) */
   r: number;
+  /** Optional physical propeller shaft speed fraction (-1..+1) after rotational inertia */
+  effectiveProp?: number;
 }
 
 export interface HydroStepResult {
@@ -54,6 +56,8 @@ export interface HydroTelemetry {
   speedKnots: number;
   yawRateRadSec: number;
   helmAngleDeg: number;
+  /** Effective spinning propeller shaft state (-1..+1) after rotational inertia */
+  effectiveProp: number;
   /** Dynamic hull pivot point forward of midships (m) */
   pivotPointLocalX: number;
   /** Prop thrust / wash vector in body frame (N) */
@@ -103,6 +107,31 @@ export function windFromDegToWorldVelocity(windFromDeg: number, speedKnots: numb
 }
 
 /**
+ * Advances the physical spinning propeller shaft state (`effectiveProp` in [-1, 1]) toward
+ * the commanded throttle lever (`targetThrottle` in [-1, 1]) with rotational inertia (`propInertiaTauSec`)
+ * and maximum shaft reversal slew rate (`propMaxSlewPerSec`).
+ */
+export function stepPropellerInertia(
+  currentEffectiveProp: number,
+  targetThrottle: number,
+  spec: VesselSpec,
+  dt: number
+): number {
+  if (!Number.isFinite(dt) || dt <= 0) {
+    return clamp(currentEffectiveProp, -1, 1);
+  }
+  const target = clamp(targetThrottle, -1, 1);
+  const current = clamp(currentEffectiveProp, -1, 1);
+  const tau = Math.max(0.05, spec.propInertiaTauSec);
+  const alpha = 1 - Math.exp(-dt / tau);
+  const expStep = (target - current) * alpha;
+  const maxSlew = Math.max(0.2, spec.propMaxSlewPerSec) * dt;
+  const delta = clamp(expStep, -maxSlew, maxSlew);
+  const next = clamp(current + delta, -1, 1);
+  return Math.abs(next) < 1e-4 && Math.abs(target) < 1e-4 ? 0 : next;
+}
+
+/**
  * Computes 3-DOF Fossen marine forces, moments, and added-mass accelerations in body-fixed coordinates:
  *  +x_b = Bow (ahead), +y_b = Starboard (right), +psi/+r = Clockwise yaw (turn to Starboard).
  */
@@ -113,7 +142,7 @@ export function computeHydrodynamicStep(
   controls: ControlInputs,
   wind: WindEnvironment
 ): HydroStepResult {
-  const throttle = clamp(controls.throttle, -1, 1);
+  const throttle = clamp(vel.effectiveProp ?? controls.throttle, -1, 1);
   const helm = clamp(controls.helm, -1, 1);
   const bowThrusterInput = spec.hasBowThruster ? clamp(controls.bowThruster, -1, 1) : 0;
 
@@ -272,6 +301,7 @@ export function computeHydrodynamicStep(
       speedKnots,
       yawRateRadSec: r,
       helmAngleDeg: helm * spec.maxHelmDeg,
+      effectiveProp: throttle,
       pivotPointLocalX,
       propThrustBody: { x: propX, y: propY - propWalkLat, torque: propTorque },
       propWalkLateralN: propWalkLat,

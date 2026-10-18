@@ -4,6 +4,7 @@ import {
   ControlInputs,
   MS_TO_KNOTS,
   normalizeAngleRad,
+  stepPropellerInertia,
 } from '../physics/hydrodynamics';
 import { MarinaLayout } from '../physics/marina';
 import { SimulationSnapshot } from '../physics/world';
@@ -51,6 +52,7 @@ export function evaluateControlRollout(
   let u = snap.telemetry.surgeKnots / MS_TO_KNOTS;
   let v = snap.telemetry.swayKnots / MS_TO_KNOTS;
   let r = snap.telemetry.yawRateRadSec ?? 0;
+  let effectiveProp = snap.telemetry.effectiveProp ?? snap.controls.throttle;
 
   const steps = Math.max(4, Math.round(horizonSec / dtSec));
   const trajectory: RolloutTrajectoryPoint[] = [];
@@ -81,10 +83,11 @@ export function evaluateControlRollout(
 
   for (let step = 1; step <= steps; step++) {
     const tOffset = step * dtSec;
+    effectiveProp = stepPropellerInertia(effectiveProp, candidateControls.throttle, spec, dtSec);
     const hydro = computeHydrodynamicStep(
       spec,
       heading,
-      { u, v, r },
+      { u, v, r, effectiveProp },
       candidateControls,
       {
         trueWindKnots: snap.trueWindKnots,

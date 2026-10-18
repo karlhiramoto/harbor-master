@@ -383,11 +383,18 @@ export function computeCorridorPlan(
           : normalizeAngleRad(-Math.PI / 2 + clamp(dirToBerth - -Math.PI / 2, -0.38, 0.38));
     }
   } else if (berth.id === 'east-seawall') {
-    // East Seawall pocket: x in [19.7, 25.5], y in [-6.6, 6.8], targetHeadingRad = -PI/2 (allowOppositeHeading: true)
+    // East Seawall pocket: x in [19.7, 25.5], y in [-6.5, 8.1], targetHeadingRad = -PI/2 (allowOppositeHeading: true)
     const pocketX = 21.8;
-    const pocketY = 0.2;
-    const fairwayWp = { x: 15.5, y: fairwayLaneY * 0.6, label: 'East Fairway Channel' };
-    const entryWp = { x: 21.2, y: -0.4, label: 'Seawall Pocket Entry' };
+    const pocketY = 0.8;
+    const fairwayWp =
+      snap.enableTraffic && px < 14.5
+        ? {
+            x: Math.min(15.5, px + 6.0),
+            y: py < 0.2 ? 0.75 : clamp(fairwayLaneY * 0.75, 0.25, 0.75),
+            label: 'East Fairway Channel',
+          }
+        : { x: 15.5, y: fairwayLaneY * 0.6, label: 'East Fairway Channel' };
+    const entryWp = { x: 21.2, y: 0.2, label: 'Seawall Pocket Entry' };
     const berthWp = { x: pocketX, y: pocketY, label: 'East Seawall Berth' };
     waypoints.push(fairwayWp, entryWp, berthWp);
 
@@ -412,7 +419,7 @@ export function computeCorridorPlan(
       desiredHeadingRad = preferSouthHeading ? Math.PI / 2 : -Math.PI / 2;
       if (Math.abs(normalizeAngleRad(desiredHeadingRad - heading)) > 0.44) {
         requiresStandingPivot = true;
-        pivotHoldCenter = { x: 21.5, y: 0.2 };
+        pivotHoldCenter = { x: 21.5, y: 0.8 };
       }
     }
   } else if (berth.id === 'south-med-stern') {
@@ -435,7 +442,7 @@ export function computeCorridorPlan(
 
     const northHeadingErr = Math.abs(normalizeAngleRad(-Math.PI / 2 - heading));
     const alignedForMedBacking =
-      heading <= (snap.enableTraffic ? -1.38 : -0.78) && heading >= -2.35;
+      heading <= (snap.enableTraffic ? -0.72 : -1.05) && heading >= -2.55;
     // On Stage 10 (enableTraffic), hold horizontal heading (~0 rad) in the center fairway lane
     // until tender-1 (Pass 1 westbound at y = 3.1) passes West of our CoG (elapsedSec ~ 16.2s);
     const tenderPass1Approaching =
@@ -444,9 +451,9 @@ export function computeCorridorPlan(
       snap.movingHazards.some((hz) => hz.y > 1.5 && hz.x > px - 3.2);
     const needFairwayTransit = snap.enableTraffic
       ? (px < -10.5 || tenderPass1Approaching) && Math.abs(heading) < 0.65
-      : px > -4.3 && !(alignedForMedBacking && px < -2.0);
+      : px > -3.2 && !(alignedForMedBacking && px < -2.0);
 
-    if (!snap.enableTraffic && px > 6.5 && Math.abs(normalizeAngleRad(Math.PI - heading)) > 0.52) {
+    if (!snap.enableTraffic && px > 6.5 && Math.abs(normalizeAngleRad(Math.PI - heading)) > 0.35) {
       // Stage 7 starts at x=12 facing North (-PI/2): rotate Clockwise (-90 -> 0 -> +90 -> 180)
       // in the wide East Turn Basin (x=9.0, y=1.1) using right-hand prop walk!
       activeWaypoint = { x: 9.0, y: 1.1, label: 'East Turn Basin' };
@@ -458,7 +465,7 @@ export function computeCorridorPlan(
           : Math.PI;
       requiresStandingPivot = true;
       pivotHoldCenter = { x: 9.0, y: 1.1 };
-    } else if (py < 3.0 && needFairwayTransit) {
+    } else if (py < 5.0 && needFairwayTransit) {
       // Phase 1: Transit fairway to Med Pivot Basin (always keep transitWp.x ahead of px!)
       const transitWp =
         snap.enableTraffic && (px < -14.0 || tenderPass1Approaching)
