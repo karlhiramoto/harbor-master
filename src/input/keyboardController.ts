@@ -1,8 +1,11 @@
 import { ControlInputs, clamp } from '../physics/hydrodynamics';
 
 export type CanonicalControlKey =
-  | 'throttleUp'
-  | 'throttleDown'
+  | 'portThrottleUp'
+  | 'portThrottleDown'
+  | 'stbdThrottleUp'
+  | 'stbdThrottleDown'
+  | 'toggleThrottleMode'
   | 'helmLeft'
   | 'helmRight'
   | 'thrusterPort'
@@ -19,6 +22,10 @@ export interface ActiveArrowHighlights {
   down: boolean;
   left: boolean;
   right: boolean;
+  portUp: boolean;
+  portDown: boolean;
+  stbdUp: boolean;
+  stbdDown: boolean;
 }
 
 const HOLD_RAMP_DELAY_SEC = 0.14;
@@ -35,11 +42,20 @@ export function resolveCanonicalKey(ev: { code?: string; key?: string }): Canoni
   const code = ev.code ?? '';
   const key = (ev.key ?? '').toLowerCase();
 
-  if (code === 'ArrowUp' || key === 'arrowup' || code === 'KeyW' || key === 'w') {
-    return 'throttleUp';
+  if (code === 'KeyW' || key === 'w') {
+    return 'portThrottleUp';
   }
-  if (code === 'ArrowDown' || key === 'arrowdown' || code === 'KeyS' || key === 's') {
-    return 'throttleDown';
+  if (code === 'KeyS' || key === 's') {
+    return 'portThrottleDown';
+  }
+  if (code === 'ArrowUp' || key === 'arrowup' || code === 'KeyI' || key === 'i') {
+    return 'stbdThrottleUp';
+  }
+  if (code === 'ArrowDown' || key === 'arrowdown' || code === 'KeyK' || key === 'k') {
+    return 'stbdThrottleDown';
+  }
+  if (code === 'KeyU' || key === 'u') {
+    return 'toggleThrottleMode';
   }
   if (code === 'ArrowLeft' || key === 'arrowleft' || code === 'KeyA' || key === 'a') {
     return 'helmLeft';
@@ -97,6 +113,7 @@ export class KeyboardController {
   public onResetStage?: () => void;
   public onToggleXRay?: () => void;
   public onOpenHelp?: () => void;
+  public onToggleThrottleMode?: () => void;
 
   /**
    * Processes a keydown event and returns updated ControlInputs when an immediate
@@ -123,14 +140,67 @@ export class KeyboardController {
     }
 
     const next = { ...current };
+    const isSeparate = next.throttleMode === 'separate';
+
+    const applyUnifiedStep = (delta: number): void => {
+      const stepped = stepThrottleWithNeutralDetent(next.throttle, delta);
+      next.throttle = stepped;
+      if (next.throttlePort !== undefined || next.throttleMode !== undefined) {
+        next.throttlePort = stepped;
+      }
+      if (next.throttleStbd !== undefined || next.throttleMode !== undefined) {
+        next.throttleStbd = stepped;
+      }
+    };
+
+    const applyPortStep = (delta: number): void => {
+      const curP = next.throttlePort ?? next.throttle;
+      const curS = next.throttleStbd ?? next.throttle;
+      const steppedP = stepThrottleWithNeutralDetent(curP, delta);
+      next.throttlePort = steppedP;
+      next.throttleStbd = curS;
+      next.throttle = Math.round(((steppedP + curS) * 0.5) * 100) / 100;
+    };
+
+    const applyStbdStep = (delta: number): void => {
+      const curP = next.throttlePort ?? next.throttle;
+      const curS = next.throttleStbd ?? next.throttle;
+      const steppedS = stepThrottleWithNeutralDetent(curS, delta);
+      next.throttlePort = curP;
+      next.throttleStbd = steppedS;
+      next.throttle = Math.round(((curP + steppedS) * 0.5) * 100) / 100;
+    };
 
     switch (action) {
-      case 'throttleUp':
-        next.throttle = stepThrottleWithNeutralDetent(next.throttle, THROTTLE_TAP_STEP);
+      case 'portThrottleUp':
+        if (isSeparate) applyPortStep(THROTTLE_TAP_STEP);
+        else applyUnifiedStep(THROTTLE_TAP_STEP);
         break;
-      case 'throttleDown':
-        next.throttle = stepThrottleWithNeutralDetent(next.throttle, -THROTTLE_TAP_STEP);
+      case 'portThrottleDown':
+        if (isSeparate) applyPortStep(-THROTTLE_TAP_STEP);
+        else applyUnifiedStep(-THROTTLE_TAP_STEP);
         break;
+      case 'stbdThrottleUp':
+        if (isSeparate) applyStbdStep(THROTTLE_TAP_STEP);
+        else applyUnifiedStep(THROTTLE_TAP_STEP);
+        break;
+      case 'stbdThrottleDown':
+        if (isSeparate) applyStbdStep(-THROTTLE_TAP_STEP);
+        else applyUnifiedStep(-THROTTLE_TAP_STEP);
+        break;
+      case 'toggleThrottleMode': {
+        const nextMode = next.throttleMode === 'separate' ? 'unified' : 'separate';
+        next.throttleMode = nextMode;
+        if (nextMode === 'unified') {
+          next.throttlePort = next.throttle;
+          next.throttleStbd = next.throttle;
+        } else {
+          next.throttlePort = next.throttlePort ?? next.throttle;
+          next.throttleStbd = next.throttleStbd ?? next.throttle;
+        }
+        this.onToggleThrottleMode?.();
+        break;
+      }
       case 'helmLeft': {
         const stepped = clamp(next.helm - HELM_TAP_STEP, -1, 1);
         next.helm = Math.abs(stepped) < 0.04 ? 0 : stepped;
@@ -149,6 +219,12 @@ export class KeyboardController {
         break;
       case 'neutralStop':
         next.throttle = 0;
+        if (next.throttlePort !== undefined || next.throttleMode !== undefined) {
+          next.throttlePort = 0;
+        }
+        if (next.throttleStbd !== undefined || next.throttleMode !== undefined) {
+          next.throttleStbd = 0;
+        }
         break;
       case 'centerHelm':
         next.helm = 0;
@@ -182,11 +258,19 @@ export class KeyboardController {
   }
 
   public getActiveHighlights(): ActiveArrowHighlights {
+    const portUp = this.heldSinceSec.has('portThrottleUp');
+    const portDown = this.heldSinceSec.has('portThrottleDown');
+    const stbdUp = this.heldSinceSec.has('stbdThrottleUp');
+    const stbdDown = this.heldSinceSec.has('stbdThrottleDown');
     return {
-      up: this.heldSinceSec.has('throttleUp'),
-      down: this.heldSinceSec.has('throttleDown'),
+      up: portUp || stbdUp,
+      down: portDown || stbdDown,
       left: this.heldSinceSec.has('helmLeft'),
       right: this.heldSinceSec.has('helmRight'),
+      portUp,
+      portDown,
+      stbdUp,
+      stbdDown,
     };
   }
 
@@ -197,18 +281,57 @@ export class KeyboardController {
   public step(dtSec: number, current: ControlInputs, hasPointerThrusterHold = false): ControlInputs {
     this.nowSec += dtSec;
     const next = { ...current };
+    const isSeparate = next.throttleMode === 'separate';
 
-    const upHeld = this.heldSinceSec.get('throttleUp');
-    const downHeld = this.heldSinceSec.get('throttleDown');
-    if (upHeld !== undefined && this.nowSec - upHeld >= HOLD_RAMP_DELAY_SEC) {
-      const prev = next.throttle;
-      const cand = clamp(prev + dtSec * THROTTLE_RAMP_PER_SEC, -1, 1);
-      // Pause briefly on Neutral when crossing from Astern to Ahead unless already at 0
-      next.throttle = prev < -0.02 && cand > 0 ? 0 : cand;
-    } else if (downHeld !== undefined && this.nowSec - downHeld >= HOLD_RAMP_DELAY_SEC) {
-      const prev = next.throttle;
-      const cand = clamp(prev - dtSec * THROTTLE_RAMP_PER_SEC, -1, 1);
-      next.throttle = prev > 0.02 && cand < 0 ? 0 : cand;
+    const rampValue = (prev: number, dir: 1 | -1): number => {
+      const cand = clamp(prev + dir * dtSec * THROTTLE_RAMP_PER_SEC, -1, 1);
+      if (dir > 0 && prev < -0.02 && cand > 0) return 0;
+      if (dir < 0 && prev > 0.02 && cand < 0) return 0;
+      return cand;
+    };
+
+    const portUpHeld = this.heldSinceSec.get('portThrottleUp');
+    const portDownHeld = this.heldSinceSec.get('portThrottleDown');
+    const stbdUpHeld = this.heldSinceSec.get('stbdThrottleUp');
+    const stbdDownHeld = this.heldSinceSec.get('stbdThrottleDown');
+
+    if (isSeparate) {
+      let p = next.throttlePort ?? next.throttle;
+      let s = next.throttleStbd ?? next.throttle;
+      if (portUpHeld !== undefined && this.nowSec - portUpHeld >= HOLD_RAMP_DELAY_SEC) {
+        p = rampValue(p, 1);
+      } else if (portDownHeld !== undefined && this.nowSec - portDownHeld >= HOLD_RAMP_DELAY_SEC) {
+        p = rampValue(p, -1);
+      }
+      if (stbdUpHeld !== undefined && this.nowSec - stbdUpHeld >= HOLD_RAMP_DELAY_SEC) {
+        s = rampValue(s, 1);
+      } else if (stbdDownHeld !== undefined && this.nowSec - stbdDownHeld >= HOLD_RAMP_DELAY_SEC) {
+        s = rampValue(s, -1);
+      }
+      next.throttlePort = p;
+      next.throttleStbd = s;
+      next.throttle = Math.round(((p + s) * 0.5) * 100) / 100;
+    } else {
+      const upHeld =
+        portUpHeld !== undefined && stbdUpHeld !== undefined
+          ? Math.min(portUpHeld, stbdUpHeld)
+          : (portUpHeld ?? stbdUpHeld);
+      const downHeld =
+        portDownHeld !== undefined && stbdDownHeld !== undefined
+          ? Math.min(portDownHeld, stbdDownHeld)
+          : (portDownHeld ?? stbdDownHeld);
+
+      if (upHeld !== undefined && this.nowSec - upHeld >= HOLD_RAMP_DELAY_SEC) {
+        next.throttle = rampValue(next.throttle, 1);
+      } else if (downHeld !== undefined && this.nowSec - downHeld >= HOLD_RAMP_DELAY_SEC) {
+        next.throttle = rampValue(next.throttle, -1);
+      }
+      if (next.throttlePort !== undefined || next.throttleMode !== undefined) {
+        next.throttlePort = next.throttle;
+      }
+      if (next.throttleStbd !== undefined || next.throttleMode !== undefined) {
+        next.throttleStbd = next.throttle;
+      }
     }
 
     const leftHeld = this.heldSinceSec.get('helmLeft');

@@ -1,4 +1,4 @@
-import { VesselSpec } from './vessels';
+import { ThrottleMode, VesselSpec } from './vessels';
 
 export const KNOTS_TO_MS = 0.514444;
 export const MS_TO_KNOTS = 1 / KNOTS_TO_MS;
@@ -7,6 +7,12 @@ export const AIR_DENSITY_RHO = 1.225;
 export interface ControlInputs {
   /** -1.0 (full astern) .. 0 (neutral) .. +1.0 (full ahead) */
   throttle: number;
+  /** Optional independent Port engine throttle (-1.0 .. +1.0). Defaults to `throttle` when omitted. */
+  throttlePort?: number;
+  /** Optional independent Starboard engine throttle (-1.0 .. +1.0). Defaults to `throttle` when omitted. */
+  throttleStbd?: number;
+  /** Whether twin-engine throttles move together ('unified') or independently ('separate') */
+  throttleMode?: ThrottleMode;
   /** -1.0 (full port / left) .. 0 (center) .. +1.0 (full starboard / right) */
   helm: number;
   /** -1.0 (push bow port) .. 0 .. +1.0 (push bow starboard) */
@@ -33,6 +39,10 @@ export interface BodyVelocityState {
   r: number;
   /** Optional physical propeller shaft speed fraction (-1..+1) after rotational inertia */
   effectiveProp?: number;
+  /** Optional Port propeller shaft speed fraction (-1..+1) after rotational inertia */
+  effectivePropPort?: number;
+  /** Optional Starboard propeller shaft speed fraction (-1..+1) after rotational inertia */
+  effectivePropStbd?: number;
 }
 
 export interface HydroStepResult {
@@ -58,10 +68,20 @@ export interface HydroTelemetry {
   helmAngleDeg: number;
   /** Effective spinning propeller shaft state (-1..+1) after rotational inertia */
   effectiveProp: number;
+  /** Effective Port propeller shaft state (-1..+1) */
+  effectivePropPort: number;
+  /** Effective Starboard propeller shaft state (-1..+1) */
+  effectivePropStbd: number;
   /** Dynamic hull pivot point forward of midships (m) */
   pivotPointLocalX: number;
   /** Prop thrust / wash vector in body frame (N) */
   propThrustBody: { x: number; y: number; torque: number };
+  /** Port engine thrust vector in body frame (N) */
+  portThrustBody: { x: number; y: number };
+  /** Starboard engine thrust vector in body frame (N) */
+  stbdThrustBody: { x: number; y: number };
+  /** Pure differential twin-screw yaw moment (N*m, + clockwise/starboard) */
+  differentialTorqueNm: number;
   /** Lateral prop walk force at stern (N, negative = port stern pull) */
   propWalkLateralN: number;
   /** Effective bow thruster lateral force (N) */
@@ -142,7 +162,28 @@ export function computeHydrodynamicStep(
   controls: ControlInputs,
   wind: WindEnvironment
 ): HydroStepResult {
-  const throttle = clamp(vel.effectiveProp ?? controls.throttle, -1, 1);
+  const isTwin = spec.engineCount === 2;
+  const isUnified = (controls.throttleMode ?? spec.defaultThrottleMode) === 'unified';
+  const baseThrottle = clamp(vel.effectiveProp ?? controls.throttle, -1, 1);
+
+  const effPort = isTwin
+    ? clamp(
+        vel.effectivePropPort ??
+          (isUnified ? baseThrottle : controls.throttlePort ?? baseThrottle),
+        -1,
+        1
+      )
+    : baseThrottle;
+  const effStbd = isTwin
+    ? clamp(
+        vel.effectivePropStbd ??
+          (isUnified ? baseThrottle : controls.throttleStbd ?? baseThrottle),
+        -1,
+        1
+      )
+    : baseThrottle;
+
+  const throttle = isTwin ? 0.5 * (effPort + effStbd) : baseThrottle;
   const helm = clamp(controls.helm, -1, 1);
   const bowThrusterInput = spec.hasBowThruster ? clamp(controls.bowThruster, -1, 1) : 0;
 
@@ -158,13 +199,79 @@ export function computeHydrodynamicStep(
       ? forwardBlend * spec.forwardPivotBiasM
       : Math.abs(forwardBlend) * spec.reversePivotBiasM;
 
-  // 2. Propulsion, Steerable Outboard vs. Fixed Inboard + Spade Rudder + Prop Walk
+  // 2. Propulsion: Single/Twin Steerable Outboards vs. Single/Twin Fixed Inboard + Rudder(s)
   let propX = 0;
   let propY = 0;
   let propTorque = 0;
   let propWalkLat = 0;
+  let portThrustBody = { x: 0, y: 0 };
+  let stbdThrustBody = { x: 0, y: 0 };
+  let differentialTorqueNm = 0;
 
-  if (spec.propulsion === 'outboard') {
+  if (isTwin && spec.propulsion === 'outboard') {
+    // Twin steerable outboards mounted at (spec.propPosX, ±spec.propLateralOffsetM)
+    const halfFwd = 0.5 * spec.maxForwardThrustN;
+    const halfRev = 0.5 * spec.maxReverseThrustN;
+    const rawPort = effPort >= 0 ? effPort * halfFwd : effPort * halfRev;
+    const rawStbd = effStbd >= 0 ? effStbd * halfFwd : effStbd * halfRev;
+
+    const portX = rawPort * Math.cos(helmRad);
+    const portY = -rawPort * Math.sin(helmRad) * (effPort >= 0 ? 1 : 0.85);
+    const stbdX = rawStbd * Math.cos(helmRad);
+    const stbdY = -rawStbd * Math.sin(helmRad) * (effStbd >= 0 ? 1 : 0.85);
+
+    portThrustBody = { x: portX, y: portY };
+    stbdThrustBody = { x: stbdX, y: stbdY };
+
+    const lowerUnitLiftN = -u * Math.abs(u) * 115 * Math.sin(helmRad);
+    propWalkLat =
+      throttle < 0
+        ? Math.abs(throttle) * -spec.reversePropWalkPortN
+        : throttle * spec.forwardPropWalkStbdN;
+
+    propX = portX + stbdX;
+    propY = portY + stbdY + lowerUnitLiftN + propWalkLat;
+
+    // Differential thrust torque: Port ahead (+portX at -y_off) + Stbd astern (-stbdX at +y_off) -> +torqueZ (clockwise turn)
+    differentialTorqueNm = spec.propLateralOffsetM * (portX - stbdX);
+    propTorque = spec.propPosX * propY + differentialTorqueNm;
+  } else if (isTwin && spec.propulsion === 'inboard-diesel') {
+    // Catamaran: Twin wide-set hull saildrives + linked twin rudders
+    const halfFwd = 0.5 * spec.maxForwardThrustN;
+    const halfRev = 0.5 * spec.maxReverseThrustN;
+    const portX = effPort >= 0 ? effPort * halfFwd : effPort * halfRev;
+    const stbdX = effStbd >= 0 ? effStbd * halfFwd : effStbd * halfRev;
+
+    const computeHullRudderLift = (effSide: number): number => {
+      const washFlowMs =
+        effSide > 0
+          ? Math.sqrt((effSide * halfFwd * spec.propWashRudderCoupling) / 280)
+          : 0;
+      if (u >= -0.05 || washFlowMs > Math.abs(u)) {
+        const effectiveAftFlowMs = Math.max(0, u + washFlowMs);
+        return -effectiveAftFlowMs * effectiveAftFlowMs * 360 * Math.sin(helmRad);
+      }
+      const sternwayMs = Math.abs(u);
+      const lowSpeedDeadband = clamp((sternwayMs - 0.14) / 0.4, 0, 1);
+      return sternwayMs * sternwayMs * 310 * lowSpeedDeadband * Math.sin(helmRad);
+    };
+
+    const portRudderY = computeHullRudderLift(effPort);
+    const stbdRudderY = computeHullRudderLift(effStbd);
+
+    portThrustBody = { x: portX, y: portRudderY };
+    stbdThrustBody = { x: stbdX, y: stbdRudderY };
+
+    propWalkLat =
+      throttle < 0
+        ? Math.abs(throttle) * -spec.reversePropWalkPortN
+        : throttle * spec.forwardPropWalkStbdN;
+
+    propX = portX + stbdX;
+    propY = portRudderY + stbdRudderY + propWalkLat;
+    differentialTorqueNm = spec.propLateralOffsetM * (portX - stbdX);
+    propTorque = spec.propPosX * propY + differentialTorqueNm;
+  } else if (spec.propulsion === 'outboard') {
     // Vectored outboard nozzle at transom (x = spec.propPosX, negative):
     // In forward throttle (+), positive helm (+ right turn) deflects thrust to -y (port),
     // which at x = -3.5m produces POSITIVE torque (+N = clockwise right turn of bow, swinging stern port)!
@@ -191,6 +298,9 @@ export function computeHydrodynamicStep(
         ? Math.abs(throttle) * -spec.reversePropWalkPortN
         : throttle * spec.forwardPropWalkStbdN;
     propY += propWalkLat;
+
+    portThrustBody = { x: propX * 0.5, y: (propY - propWalkLat) * 0.5 };
+    stbdThrustBody = { x: propX * 0.5, y: (propY - propWalkLat) * 0.5 };
 
     // Yaw moment about CoG (moment arm = spec.propPosX, which is negative!)
     propTorque = spec.propPosX * propY;
@@ -230,6 +340,8 @@ export function computeHydrodynamicStep(
     }
 
     propY = rudderLateralForceN + propWalkLat;
+    portThrustBody = { x: propX * 0.5, y: rudderLateralForceN * 0.5 };
+    stbdThrustBody = { x: propX * 0.5, y: rudderLateralForceN * 0.5 };
     propTorque = spec.propPosX * propY;
   }
 
@@ -302,8 +414,13 @@ export function computeHydrodynamicStep(
       yawRateRadSec: r,
       helmAngleDeg: helm * spec.maxHelmDeg,
       effectiveProp: throttle,
+      effectivePropPort: effPort,
+      effectivePropStbd: effStbd,
       pivotPointLocalX,
       propThrustBody: { x: propX, y: propY - propWalkLat, torque: propTorque },
+      portThrustBody,
+      stbdThrustBody,
+      differentialTorqueNm,
       propWalkLateralN: propWalkLat,
       bowThrusterLateralN,
       windForceBody: {

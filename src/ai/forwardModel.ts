@@ -53,6 +53,14 @@ export function evaluateControlRollout(
   let v = snap.telemetry.swayKnots / MS_TO_KNOTS;
   let r = snap.telemetry.yawRateRadSec ?? 0;
   let effectiveProp = snap.telemetry.effectiveProp ?? snap.controls.throttle;
+  let effectivePropPort =
+    snap.telemetry.effectivePropPort ??
+    snap.controls.throttlePort ??
+    effectiveProp;
+  let effectivePropStbd =
+    snap.telemetry.effectivePropStbd ??
+    snap.controls.throttleStbd ??
+    effectiveProp;
 
   const steps = Math.max(4, Math.round(horizonSec / dtSec));
   const trajectory: RolloutTrajectoryPoint[] = [];
@@ -83,11 +91,27 @@ export function evaluateControlRollout(
 
   for (let step = 1; step <= steps; step++) {
     const tOffset = step * dtSec;
-    effectiveProp = stepPropellerInertia(effectiveProp, candidateControls.throttle, spec, dtSec);
+    const isTwin = spec.engineCount === 2;
+    const isUnified = (candidateControls.throttleMode ?? spec.defaultThrottleMode) === 'unified';
+    const targetPort =
+      isTwin && !isUnified
+        ? (candidateControls.throttlePort ?? candidateControls.throttle)
+        : candidateControls.throttle;
+    const targetStbd =
+      isTwin && !isUnified
+        ? (candidateControls.throttleStbd ?? candidateControls.throttle)
+        : candidateControls.throttle;
+
+    effectivePropPort = stepPropellerInertia(effectivePropPort, targetPort, spec, dtSec);
+    effectivePropStbd = stepPropellerInertia(effectivePropStbd, targetStbd, spec, dtSec);
+    effectiveProp = isTwin
+      ? 0.5 * (effectivePropPort + effectivePropStbd)
+      : effectivePropPort;
+
     const hydro = computeHydrodynamicStep(
       spec,
       heading,
-      { u, v, r, effectiveProp },
+      { u, v, r, effectiveProp, effectivePropPort, effectivePropStbd },
       candidateControls,
       {
         trueWindKnots: snap.trueWindKnots,
@@ -232,6 +256,8 @@ export function evaluateControlRollout(
     const pivotSpeedCost = Math.max(0, terminalSpeedKnots - 1.05) * 26.0;
     const stagnationPenalty =
       Math.abs(candidateControls.throttle) < 0.1 &&
+      Math.abs(candidateControls.throttlePort ?? candidateControls.throttle) < 0.1 &&
+      Math.abs(candidateControls.throttleStbd ?? candidateControls.throttle) < 0.1 &&
       Math.abs(candidateControls.bowThruster) < 0.1 &&
       Math.abs(r) < 0.08
         ? 140.0

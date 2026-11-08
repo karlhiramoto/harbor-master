@@ -133,8 +133,17 @@ export class MarinaPhysicsWorld {
   private gustiness = 0.08;
   private enableTraffic = false;
 
-  private controls: ControlInputs = { throttle: 0, helm: 0, bowThruster: 0 };
+  private controls: ControlInputs = {
+    throttle: 0,
+    throttlePort: 0,
+    throttleStbd: 0,
+    throttleMode: 'unified',
+    helm: 0,
+    bowThruster: 0,
+  };
   private effectiveProp = 0;
+  private effectivePropPort = 0;
+  private effectivePropStbd = 0;
   private telemetry!: HydroTelemetry;
   private elapsedSec = 0;
   private accumulator = 0;
@@ -192,8 +201,18 @@ export class MarinaPhysicsWorld {
     this.gustiness = clamp(config.gustiness, 0, 0.35);
     this.enableTraffic = Boolean(config.enableTraffic);
 
-    this.controls = { throttle: 0, helm: 0, bowThruster: 0 };
+    const spec = VESSEL_SPECS[this.vesselId];
+    this.controls = {
+      throttle: 0,
+      throttlePort: 0,
+      throttleStbd: 0,
+      throttleMode: spec.defaultThrottleMode,
+      helm: 0,
+      bowThruster: 0,
+    };
     this.effectiveProp = 0;
+    this.effectivePropPort = 0;
+    this.effectivePropStbd = 0;
     this.elapsedSec = 0;
     this.accumulator = 0;
     this.dockingHoldSec = 0;
@@ -318,7 +337,6 @@ export class MarinaPhysicsWorld {
     this.wakeWaveX = this.enableTraffic ? -30 : null;
 
     // 5. Active Player Vessel RigidBody + Bare-Hull + 4 Adjustable Side Fenders
-    const spec = VESSEL_SPECS[this.vesselId];
     this.playerBody = this.rapierWorld.createRigidBody(
       RAPIER.RigidBodyDesc.dynamic()
         .setTranslation(config.startX, config.startY)
@@ -350,7 +368,7 @@ export class MarinaPhysicsWorld {
     const initHydro = computeHydrodynamicStep(
       spec,
       config.startHeadingRad,
-      { u: 0, v: 0, r: 0, effectiveProp: 0 },
+      { u: 0, v: 0, r: 0, effectiveProp: 0, effectivePropPort: 0, effectivePropStbd: 0 },
       this.controls,
       {
         trueWindKnots: this.trueWindKnots,
@@ -391,9 +409,51 @@ export class MarinaPhysicsWorld {
   }
 
   public setControls(partial: Partial<ControlInputs>): void {
-    if (partial.throttle !== undefined) {
-      this.controls.throttle = clamp(partial.throttle, -1, 1);
+    const spec = VESSEL_SPECS[this.vesselId];
+    const isTwin = spec.engineCount === 2;
+
+    if (partial.throttleMode !== undefined) {
+      this.controls.throttleMode = isTwin ? partial.throttleMode : 'unified';
+      if (this.controls.throttleMode === 'unified') {
+        const synced = clamp(this.controls.throttle, -1, 1);
+        this.controls.throttle = synced;
+        this.controls.throttlePort = synced;
+        this.controls.throttleStbd = synced;
+      }
     }
+
+    const mode = isTwin
+      ? (this.controls.throttleMode ?? spec.defaultThrottleMode)
+      : 'unified';
+
+    if (mode === 'separate' && isTwin) {
+      if (partial.throttlePort !== undefined || partial.throttleStbd !== undefined) {
+        if (partial.throttlePort !== undefined) {
+          this.controls.throttlePort = clamp(partial.throttlePort, -1, 1);
+        }
+        if (partial.throttleStbd !== undefined) {
+          this.controls.throttleStbd = clamp(partial.throttleStbd, -1, 1);
+        }
+        const p = this.controls.throttlePort ?? this.controls.throttle;
+        const s = this.controls.throttleStbd ?? this.controls.throttle;
+        this.controls.throttle = Math.round(((p + s) * 0.5) * 100) / 100;
+      } else if (partial.throttle !== undefined) {
+        const t = clamp(partial.throttle, -1, 1);
+        this.controls.throttle = t;
+        this.controls.throttlePort = t;
+        this.controls.throttleStbd = t;
+      }
+    } else {
+      const rawT =
+        partial.throttle ?? partial.throttlePort ?? partial.throttleStbd;
+      if (rawT !== undefined) {
+        const t = clamp(rawT, -1, 1);
+        this.controls.throttle = t;
+        this.controls.throttlePort = t;
+        this.controls.throttleStbd = t;
+      }
+    }
+
     if (partial.helm !== undefined) {
       this.controls.helm = clamp(partial.helm, -1, 1);
     }
@@ -542,13 +602,33 @@ export class MarinaPhysicsWorld {
       1 + this.gustiness * (0.65 * Math.sin(this.elapsedSec * 0.72) + 0.35 * Math.cos(this.elapsedSec * 1.65));
     const shelterFactor = this.computeShelterFactor(pos.x, pos.y);
 
-    // Advance physical propeller shaft rotational inertia toward commanded throttle
-    this.effectiveProp = stepPropellerInertia(this.effectiveProp, this.controls.throttle, spec, dt);
+    // Advance physical propeller shaft rotational inertia toward commanded throttle(s)
+    const isTwin = spec.engineCount === 2;
+    const isUnified = (this.controls.throttleMode ?? spec.defaultThrottleMode) === 'unified';
+    const targetPort = isTwin && !isUnified
+      ? (this.controls.throttlePort ?? this.controls.throttle)
+      : this.controls.throttle;
+    const targetStbd = isTwin && !isUnified
+      ? (this.controls.throttleStbd ?? this.controls.throttle)
+      : this.controls.throttle;
+
+    this.effectivePropPort = stepPropellerInertia(this.effectivePropPort, targetPort, spec, dt);
+    this.effectivePropStbd = stepPropellerInertia(this.effectivePropStbd, targetStbd, spec, dt);
+    this.effectiveProp = isTwin
+      ? 0.5 * (this.effectivePropPort + this.effectivePropStbd)
+      : this.effectivePropPort;
 
     const hydro = computeHydrodynamicStep(
       spec,
       heading,
-      { u, v, r: angvel, effectiveProp: this.effectiveProp },
+      {
+        u,
+        v,
+        r: angvel,
+        effectiveProp: this.effectiveProp,
+        effectivePropPort: this.effectivePropPort,
+        effectivePropStbd: this.effectivePropStbd,
+      },
       this.controls,
       {
         trueWindKnots: this.trueWindKnots,
@@ -650,7 +730,14 @@ export class MarinaPhysicsWorld {
     // Trigger GAME OVER immediately if cumulative repair bill exceeds $10,000
     if (!this.gameOver && this.scorer.isGameOverDamage()) {
       this.gameOver = true;
-      this.controls = { throttle: 0, helm: 0, bowThruster: 0 };
+      this.controls = {
+        throttle: 0,
+        throttlePort: 0,
+        throttleStbd: 0,
+        throttleMode: this.controls.throttleMode ?? spec.defaultThrottleMode,
+        helm: 0,
+        bowThruster: 0,
+      };
       this.playerBody.setLinvel({ x: 0, y: 0 }, true);
       this.playerBody.setAngvel(0, true);
       this.onGameOver?.(this.scorer.getRepairCostUsd(), this.scorer.getIncidents());
@@ -849,6 +936,8 @@ export class MarinaPhysicsWorld {
 
     this.dockingHoldSec = 2.5;
     this.controls.throttle = 0;
+    this.controls.throttlePort = 0;
+    this.controls.throttleStbd = 0;
     this.controls.bowThruster = 0;
     this.playerBody.setLinvel({ x: 0, y: 0 }, true);
     this.playerBody.setAngvel(0, true);

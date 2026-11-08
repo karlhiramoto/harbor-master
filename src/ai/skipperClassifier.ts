@@ -664,8 +664,12 @@ export class SkipperClassifier {
       softThruster += dists.thrusterProbs[i] * THRUSTER_CLASS_VALUES[THRUSTER_CLASSES[i]];
     }
 
-    // Standing Pivot ("Prop Kicking") duty-cycle modulation:
+    // Standing Pivot ("Prop Kicking" or Twin-Screw Differential Pivot) duty-cycle modulation:
     // Project displacement from pivotHoldCenter onto vessel bow axis to decide whether to kick forward or reverse!
+    let softThrottlePort: number | undefined;
+    let softThrottleStbd: number | undefined;
+    let softThrottleMode: ControlInputs['throttleMode'];
+
     if (corridor.requiresStandingPivot) {
       const hasRightHandPropWalk = snap.vesselSpec.reversePropWalkPortN > 250;
       const turnDir =
@@ -680,7 +684,30 @@ export class SkipperClassifier {
         dxPivot * Math.cos(snap.playerHeadingRad) +
         dyPivot * Math.sin(snap.playerHeadingRad);
 
-      if (snap.vesselSpec.bowThrusterMaxN > 0) {
+      if (snap.vesselSpec.engineCount === 2 && snap.vesselSpec.propLateralOffsetM >= 1.2) {
+        // Wide-beam Catamaran Twin-Screw Standing Pivot: opposing Port & Starboard throttles with yaw-rate damping!
+        const baseSurgeHold = clamp(
+          forwardDistToPivotCenter * 0.25 - snap.telemetry.surgeKnots * 0.55,
+          -0.22,
+          0.22
+        );
+        const hErrMag = Math.abs(corridor.headingErrorToDesiredRad);
+        const rawDiff =
+          hErrMag > 1.2
+            ? 0.72 * turnDir
+            : clamp(
+                corridor.headingErrorToDesiredRad * 0.95 -
+                  (snap.telemetry.yawRateRadSec ?? 0) * 1.15,
+                -0.72,
+                0.72
+              );
+        softThrottlePort = clamp(baseSurgeHold + rawDiff, -1, 1);
+        softThrottleStbd = clamp(baseSurgeHold - rawDiff, -1, 1);
+        softThrottle = Number(((softThrottlePort + softThrottleStbd) * 0.5).toFixed(2));
+        softThrottleMode = 'separate';
+        softHelm = clamp(rawDiff * 1.1, -1, 1);
+        softThruster = 0;
+      } else if (snap.vesselSpec.bowThrusterMaxN > 0) {
         softThrottle = clamp(
           forwardDistToPivotCenter * 0.45 - snap.telemetry.surgeKnots * 0.45,
           -0.68,
@@ -815,6 +842,9 @@ export class SkipperClassifier {
 
     const pureMlpControls: ControlInputs = {
       throttle: clamp(softThrottle, -1, 1),
+      ...(softThrottlePort !== undefined ? { throttlePort: softThrottlePort } : {}),
+      ...(softThrottleStbd !== undefined ? { throttleStbd: softThrottleStbd } : {}),
+      ...(softThrottleMode !== undefined ? { throttleMode: softThrottleMode } : {}),
       helm: clamp(softHelm, -1, 1),
       bowThruster: snap.vesselSpec.bowThrusterMaxN > 0 ? clamp(softThruster, -1, 1) : 0,
     };
@@ -878,14 +908,32 @@ export class SkipperClassifier {
       for (const hi of topHelmIndices) {
         const prior =
           dists.throttleProbs[ti] * dists.helmProbs[hi] * dists.thrusterProbs[thrusterIdx];
+        const baseT = THROTTLE_CLASS_VALUES[THROTTLE_CLASSES[ti]];
+        const baseH = HELM_CLASS_VALUES[HELM_CLASSES[hi]];
         candidates.push({
           controls: {
-            throttle: THROTTLE_CLASS_VALUES[THROTTLE_CLASSES[ti]],
-            helm: HELM_CLASS_VALUES[HELM_CLASSES[hi]],
+            throttle: baseT,
+            helm: baseH,
             bowThruster: bestThrusterVal,
           },
           prior,
         });
+        if (snap.vesselSpec.engineCount === 2 && Math.abs(baseH) >= 0.4) {
+          const diff = baseH * 0.42;
+          const pT = clamp(baseT + diff, -1, 1);
+          const sT = clamp(baseT - diff, -1, 1);
+          candidates.push({
+            controls: {
+              throttle: Number(((pT + sT) * 0.5).toFixed(3)),
+              throttlePort: Number(pT.toFixed(3)),
+              throttleStbd: Number(sT.toFixed(3)),
+              throttleMode: 'separate',
+              helm: baseH,
+              bowThruster: bestThrusterVal,
+            },
+            prior: prior * 1.05,
+          });
+        }
       }
     }
 
@@ -980,6 +1028,15 @@ export class SkipperClassifier {
     // Smooth blend between classifier expectation and best rollout candidate
     const chosenControls: ControlInputs = {
       throttle: Number(clamp(bestEval.controls.throttle, -1, 1).toFixed(3)),
+      ...(bestEval.controls.throttlePort !== undefined
+        ? { throttlePort: Number(clamp(bestEval.controls.throttlePort, -1, 1).toFixed(3)) }
+        : {}),
+      ...(bestEval.controls.throttleStbd !== undefined
+        ? { throttleStbd: Number(clamp(bestEval.controls.throttleStbd, -1, 1).toFixed(3)) }
+        : {}),
+      ...(bestEval.controls.throttleMode !== undefined
+        ? { throttleMode: bestEval.controls.throttleMode }
+        : {}),
       helm: Number(clamp(bestEval.controls.helm, -1, 1).toFixed(3)),
       bowThruster: Number(clamp(bestEval.controls.bowThruster, -1, 1).toFixed(3)),
     };

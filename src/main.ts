@@ -74,6 +74,40 @@ async function bootstrap(): Promise<void> {
       const cur = world.getSnapshot().controls.throttle;
       world.setControls({ throttle: stepThrottleWithNeutralDetent(cur, delta) });
     },
+    onTwinThrottleChange: (side, throttle) => {
+      sound.unlock();
+      if (autoPilotActive) setAutoPilot(false);
+      const cur = world.getSnapshot().controls;
+      if (cur.throttleMode === 'separate') {
+        if (side === 'port') world.setControls({ throttlePort: throttle });
+        else world.setControls({ throttleStbd: throttle });
+      } else {
+        world.setControls({ throttle });
+      }
+    },
+    onTwinThrottleStep: (side, delta) => {
+      sound.unlock();
+      if (autoPilotActive) setAutoPilot(false);
+      const cur = world.getSnapshot().controls;
+      if (cur.throttleMode === 'separate') {
+        if (side === 'port') {
+          const prev = cur.throttlePort ?? cur.throttle;
+          world.setControls({ throttlePort: stepThrottleWithNeutralDetent(prev, delta) });
+        } else {
+          const prev = cur.throttleStbd ?? cur.throttle;
+          world.setControls({ throttleStbd: stepThrottleWithNeutralDetent(prev, delta) });
+        }
+      } else {
+        world.setControls({ throttle: stepThrottleWithNeutralDetent(cur.throttle, delta) });
+      }
+    },
+    onToggleThrottleMode: () => {
+      sound.unlock();
+      if (autoPilotActive) setAutoPilot(false);
+      const cur = world.getSnapshot().controls;
+      const nextMode = cur.throttleMode === 'separate' ? 'unified' : 'separate';
+      world.setControls({ throttleMode: nextMode });
+    },
     onHelmChange: (helm) => {
       sound.unlock();
       if (autoPilotActive) setAutoPilot(false);
@@ -356,7 +390,16 @@ async function bootstrap(): Promise<void> {
     hud.updateTelemetry(snap, kb.getActiveHighlights());
     sound.updateContinuous({
       isDiesel: snap.vesselSpec.propulsion === 'inboard-diesel',
-      throttle: snap.controls.throttle,
+      throttle:
+        snap.vesselSpec.engineCount === 2
+          ? Math.max(
+              Math.abs(snap.controls.throttlePort ?? snap.controls.throttle),
+              Math.abs(snap.controls.throttleStbd ?? snap.controls.throttle)
+            ) *
+            (Math.sign(snap.controls.throttle) ||
+              Math.sign(snap.controls.throttlePort ?? 0) ||
+              Math.sign(snap.controls.throttleStbd ?? 0))
+          : snap.controls.throttle,
       bowThruster: snap.controls.bowThruster,
     });
 

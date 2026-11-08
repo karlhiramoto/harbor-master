@@ -368,4 +368,140 @@ describe('Real-Life Marine Physics & 4-Fender Scoring Suite', () => {
     const eastBerth = marina.berths['east-seawall'];
     expect(eastBerth.length).toBeGreaterThanOrEqual(14.5);
   });
+
+  it('11m Catamaran generates pure standing yaw torque from opposing Port/Starboard throttles and steers with twin rudders', () => {
+    const spec = VESSEL_SPECS.catamaran11m;
+    expect(spec.engineCount).toBe(2);
+    expect(spec.defaultThrottleMode).toBe('separate');
+
+    // 1. Port Ahead (+0.8) + Starboard Astern (-0.8) with centered helm (0) -> strong Clockwise (+torqueZ) spin in place!
+    const spinClockwise = computeHydrodynamicStep(
+      spec,
+      0,
+      { u: 0, v: 0, r: 0, effectivePropPort: 0.8, effectivePropStbd: -0.8 },
+      {
+        throttle: 0,
+        throttlePort: 0.8,
+        throttleStbd: -0.8,
+        throttleMode: 'separate',
+        helm: 0,
+        bowThruster: 0,
+      },
+      { trueWindKnots: 0, windFromDeg: 0, gustFactor: 1, shelterFactor: 1 }
+    );
+    expect(spinClockwise.telemetry.differentialTorqueNm).toBeGreaterThan(7500);
+    expect(spinClockwise.torqueZ).toBeGreaterThan(7500);
+
+    // 2. Port Astern (-0.8) + Starboard Ahead (+0.8) -> strong Counter-Clockwise (-torqueZ) spin!
+    const spinCounterClockwise = computeHydrodynamicStep(
+      spec,
+      0,
+      { u: 0, v: 0, r: 0, effectivePropPort: -0.8, effectivePropStbd: 0.8 },
+      {
+        throttle: 0,
+        throttlePort: -0.8,
+        throttleStbd: 0.8,
+        throttleMode: 'separate',
+        helm: 0,
+        bowThruster: 0,
+      },
+      { trueWindKnots: 0, windFromDeg: 0, gustFactor: 1, shelterFactor: 1 }
+    );
+    expect(spinCounterClockwise.telemetry.differentialTorqueNm).toBeLessThan(-7500);
+    expect(spinCounterClockwise.torqueZ).toBeLessThan(-7500);
+
+    // 3. Both engines Ahead (+0.7) with Starboard Helm (+1.0) -> strong forward thrust + rudder turning torque
+    const helmTurn = computeHydrodynamicStep(
+      spec,
+      0,
+      { u: 1.2, v: 0, r: 0, effectivePropPort: 0.7, effectivePropStbd: 0.7 },
+      {
+        throttle: 0.7,
+        throttlePort: 0.7,
+        throttleStbd: 0.7,
+        throttleMode: 'separate',
+        helm: 1.0,
+        bowThruster: 0,
+      },
+      { trueWindKnots: 0, windFromDeg: 0, gustFactor: 1, shelterFactor: 1 }
+    );
+    expect(helmTurn.forceBodyX).toBeGreaterThan(3500);
+    expect(helmTurn.torqueZ).toBeGreaterThan(5000);
+  });
+
+  it('9m Twin-Outboard Motorboat & KeyboardController support Unified and Separate (Split) throttle modes + Campaign Stages 11 & 12', async () => {
+    const twinSpec = VESSEL_SPECS.twinoutboard9m;
+    expect(twinSpec.engineCount).toBe(2);
+    expect(twinSpec.defaultThrottleMode).toBe('unified');
+
+    // Verify Stages 11 & 12 exist for Twin-Outboard Motorboat and Catamaran
+    const stage11 = CAMPAIGN_STAGES.find((s) => s.vesselId === 'twinoutboard9m');
+    const stage12 = CAMPAIGN_STAGES.find((s) => s.vesselId === 'catamaran11m');
+    expect(stage11).toBeDefined();
+    expect(stage12).toBeDefined();
+
+    const kb = new KeyboardController();
+    let controls = {
+      throttle: 0,
+      throttlePort: 0,
+      throttleStbd: 0,
+      throttleMode: 'unified' as const,
+      helm: 0,
+      bowThruster: 0,
+    };
+
+    // In Unified mode, KeyW steps both Port and Starboard throttles together
+    controls = kb.handleKeyDown({ code: 'KeyW' }, controls).nextControls as typeof controls;
+    kb.handleKeyUp({ code: 'KeyW' });
+    expect(controls.throttle).toBeCloseTo(0.1, 2);
+    expect(controls.throttlePort).toBeCloseTo(0.1, 2);
+    expect(controls.throttleStbd).toBeCloseTo(0.1, 2);
+
+    // KeyU toggles to Separate (Split) mode
+    controls = kb.handleKeyDown({ code: 'KeyU' }, controls).nextControls as typeof controls;
+    kb.handleKeyUp({ code: 'KeyU' });
+    expect(controls.throttleMode).toBe('separate');
+
+    // In Separate mode, KeyW adjusts Port throttle while ArrowDown adjusts Starboard throttle independently
+    controls = kb.handleKeyDown({ code: 'KeyW' }, controls).nextControls as typeof controls;
+    kb.handleKeyUp({ code: 'KeyW' });
+    expect(controls.throttlePort).toBeCloseTo(0.2, 2);
+    expect(controls.throttleStbd).toBeCloseTo(0.1, 2);
+
+    controls = kb.handleKeyDown({ key: 'ArrowDown' }, controls).nextControls as typeof controls;
+    kb.handleKeyUp({ key: 'ArrowDown' });
+    expect(controls.throttlePort).toBeCloseTo(0.2, 2);
+    expect(controls.throttleStbd).toBe(0);
+
+    // Space cuts both Port and Starboard throttles to Neutral (0)
+    controls = kb.handleKeyDown({ code: 'Space' }, controls).nextControls as typeof controls;
+    kb.handleKeyUp({ code: 'Space' });
+    expect(controls.throttle).toBe(0);
+    expect(controls.throttlePort).toBe(0);
+    expect(controls.throttleStbd).toBe(0);
+
+    // Verify MarinaPhysicsWorld tracks independent Port & Starboard propeller inertia on Catamaran
+    const world = await MarinaPhysicsWorld.create();
+    world.rebuildWorld({
+      vesselId: 'catamaran11m',
+      fenderRig: 'midships',
+      berthId: 'slip-a-bow',
+      startX: 0,
+      startY: 0,
+      startHeadingRad: 0,
+      trueWindKnots: 0,
+      windFromDeg: 0,
+      gustiness: 0,
+      enableTraffic: false,
+    });
+    expect(world.getSnapshot().controls.throttleMode).toBe('separate');
+    world.setControls({ throttlePort: 0.9, throttleStbd: -0.9, helm: 0.5 });
+    let snap = world.stepFrame(0.05);
+    for (let i = 0; i < 6; i++) {
+      snap = world.stepFrame(0.05);
+    }
+    expect(snap.telemetry.effectivePropPort).toBeGreaterThan(0.35);
+    expect(snap.telemetry.effectivePropStbd).toBeLessThan(-0.35);
+    expect(snap.telemetry.differentialTorqueNm).toBeGreaterThan(3500);
+  });
 });

@@ -561,84 +561,148 @@ export class MarinaCanvasRenderer {
     ctx.fill();
     ctx.restore();
 
-    // 2. Outboard Motor Cowl OR Sailboat Rudder Blade under stern
+    // 2. Outboard Motor Cowl(s) OR Rudder Blade(s) under stern
     const helmRad = (helmAngleDeg * Math.PI) / 180;
+    const offsetsY =
+      spec.engineCount === 2
+        ? [-spec.propLateralOffsetM, spec.propLateralOffsetM]
+        : [0];
+
     if (spec.propulsion === 'outboard') {
-      ctx.save();
-      ctx.translate(-spec.loa * 0.51, 0);
-      ctx.rotate(-helmRad);
-      ctx.fillStyle = '#1e293b';
-      ctx.strokeStyle = '#94a3b8';
-      ctx.lineWidth = 0.06;
-      ctx.fillRect(-0.52, -0.26, 0.52, 0.52);
-      ctx.strokeRect(-0.52, -0.26, 0.52, 0.52);
-      ctx.restore();
+      for (const oy of offsetsY) {
+        ctx.save();
+        ctx.translate(-spec.loa * 0.51, oy);
+        ctx.rotate(-helmRad);
+        ctx.fillStyle = '#1e293b';
+        ctx.strokeStyle = '#94a3b8';
+        ctx.lineWidth = 0.06;
+        ctx.fillRect(-0.52, -0.24, 0.52, 0.48);
+        ctx.strokeRect(-0.52, -0.24, 0.52, 0.48);
+        ctx.restore();
+      }
     } else if (isPlayer) {
-      // Underwater spade rudder preview at stern
-      ctx.save();
-      ctx.translate(spec.propPosX, 0);
-      ctx.rotate(-helmRad);
-      ctx.strokeStyle = 'rgba(251, 191, 36, 0.7)';
-      ctx.lineWidth = 0.12;
-      ctx.beginPath();
-      ctx.moveTo(0.25, 0);
-      ctx.lineTo(-0.55, 0);
-      ctx.stroke();
-      ctx.restore();
+      // Underwater spade rudder preview(s) at stern
+      for (const oy of offsetsY) {
+        ctx.save();
+        ctx.translate(spec.propPosX, oy);
+        ctx.rotate(-helmRad);
+        ctx.strokeStyle = 'rgba(251, 191, 36, 0.75)';
+        ctx.lineWidth = 0.12;
+        ctx.beginPath();
+        ctx.moveTo(0.25, 0);
+        ctx.lineTo(-0.55, 0);
+        ctx.stroke();
+        ctx.restore();
+      }
     }
 
-    // 3. Outer Fiberglass Hull Shell
-    ctx.fillStyle = opts.hullColorOverride ?? spec.hullColor;
-    ctx.strokeStyle = isPlayer ? '#f8fafc' : '#cbd5e1';
-    ctx.lineWidth = isPlayer ? 0.11 : 0.08;
-    this.traceHullPath(ctx, spec);
-    ctx.fill();
-    ctx.stroke();
+    if (spec.id === 'catamaran11m') {
+      // 3A. Catamaran Twin Demi-Hulls + Forward Trampoline + Central Bridge-Deck Saloon
+      const hullFill = opts.hullColorOverride ?? spec.hullColor;
+      const hullStroke = isPlayer ? '#f8fafc' : '#cbd5e1';
+      for (const sideSign of [-1, 1] as const) {
+        const cy = sideSign * 1.75;
+        ctx.fillStyle = hullFill;
+        ctx.strokeStyle = hullStroke;
+        ctx.lineWidth = isPlayer ? 0.1 : 0.08;
+        ctx.beginPath();
+        ctx.moveTo(spec.loa * 0.49, cy);
+        ctx.lineTo(spec.loa * 0.25, cy + 0.58);
+        ctx.lineTo(-spec.loa * 0.47, cy + 0.56);
+        ctx.lineTo(-spec.loa * 0.5, cy + 0.42);
+        ctx.lineTo(-spec.loa * 0.5, cy - 0.42);
+        ctx.lineTo(-spec.loa * 0.47, cy - 0.56);
+        ctx.lineTo(spec.loa * 0.25, cy - 0.58);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
 
-    // 4. Recessed Inner Deck / Cabin Superstructure
-    ctx.save();
-    ctx.scale(0.84, 0.76);
-    ctx.fillStyle = spec.deckColor;
-    this.traceHullPath(ctx, spec);
-    ctx.fill();
-    ctx.restore();
+      // Forward crossbeam & trampoline mesh net between bows
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.68)';
+      ctx.strokeStyle = '#64748b';
+      ctx.lineWidth = 0.07;
+      ctx.fillRect(spec.loa * 0.12, -1.22, spec.loa * 0.27, 2.44);
+      ctx.strokeRect(spec.loa * 0.12, -1.22, spec.loa * 0.27, 2.44);
 
-    // 5. Vessel-Specific Deck Details (Windshield / Cabin / Sailboat Mast & Rigging)
-    if (spec.id === 'sailboat12m') {
-      // Coachroof window strip + Cockpit well + Aluminum Mast & Boom shifted by heelAngleDeg
-      ctx.fillStyle = '#334155';
-      ctx.fillRect(-0.8, -0.82, 2.5, 1.64);
-      const heelOffsetY = (heelAngleDeg / 18) * 0.45;
-      ctx.strokeStyle = '#e2e8f0';
-      ctx.lineWidth = 0.14;
-      ctx.beginPath();
-      ctx.moveTo(0.95, 0);
-      ctx.lineTo(-3.9, heelOffsetY);
-      ctx.stroke();
-
-      // Spreaders & Mast step
-      ctx.strokeStyle = '#94a3b8';
+      // Central Bridge-Deck Cabin & Cockpit
+      ctx.fillStyle = spec.deckColor;
+      ctx.strokeStyle = hullStroke;
       ctx.lineWidth = 0.08;
       ctx.beginPath();
-      ctx.moveTo(0.95, -1.45);
-      ctx.lineTo(0.95, 1.45);
-      ctx.stroke();
-      ctx.fillStyle = '#f8fafc';
-      ctx.beginPath();
-      ctx.arc(0.95, heelOffsetY * 0.3, 0.18, 0, Math.PI * 2);
+      ctx.roundRect(-spec.loa * 0.36, -1.65, spec.loa * 0.48, 3.3, 0.35);
       ctx.fill();
-    } else if (spec.id === 'cruiser8m') {
-      // Forward cabin trunk + wrap-around dark glass windshield
+      ctx.stroke();
+
+      // Panoramic wrap-around salon windows
       ctx.fillStyle = '#0f172a';
       ctx.beginPath();
-      ctx.roundRect(-0.4, -0.92, 1.85, 1.84, 0.35);
+      ctx.roundRect(-spec.loa * 0.16, -1.32, spec.loa * 0.24, 2.64, 0.28);
       ctx.fill();
     } else {
-      // 7m Center Console T-top
-      ctx.fillStyle = '#1e293b';
-      ctx.beginPath();
-      ctx.roundRect(-0.55, -0.58, 1.25, 1.16, 0.22);
+      // 3B. Monohull Outer Fiberglass Hull Shell
+      ctx.fillStyle = opts.hullColorOverride ?? spec.hullColor;
+      ctx.strokeStyle = isPlayer ? '#f8fafc' : '#cbd5e1';
+      ctx.lineWidth = isPlayer ? 0.11 : 0.08;
+      this.traceHullPath(ctx, spec);
       ctx.fill();
+      ctx.stroke();
+
+      // 4. Recessed Inner Deck / Cabin Superstructure
+      ctx.save();
+      ctx.scale(0.84, 0.76);
+      ctx.fillStyle = spec.deckColor;
+      this.traceHullPath(ctx, spec);
+      ctx.fill();
+      ctx.restore();
+
+      // 5. Vessel-Specific Deck Details (Windshield / Cabin / Sailboat Mast & Rigging)
+      if (spec.id === 'sailboat12m') {
+        // Coachroof window strip + Cockpit well + Aluminum Mast & Boom shifted by heelAngleDeg
+        ctx.fillStyle = '#334155';
+        ctx.fillRect(-0.8, -0.82, 2.5, 1.64);
+        const heelOffsetY = (heelAngleDeg / 18) * 0.45;
+        ctx.strokeStyle = '#e2e8f0';
+        ctx.lineWidth = 0.14;
+        ctx.beginPath();
+        ctx.moveTo(0.95, 0);
+        ctx.lineTo(-3.9, heelOffsetY);
+        ctx.stroke();
+
+        // Spreaders & Mast step
+        ctx.strokeStyle = '#94a3b8';
+        ctx.lineWidth = 0.08;
+        ctx.beginPath();
+        ctx.moveTo(0.95, -1.45);
+        ctx.lineTo(0.95, 1.45);
+        ctx.stroke();
+        ctx.fillStyle = '#f8fafc';
+        ctx.beginPath();
+        ctx.arc(0.95, heelOffsetY * 0.3, 0.18, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (spec.id === 'cruiser8m') {
+        // Forward cabin trunk + wrap-around dark glass windshield
+        ctx.fillStyle = '#0f172a';
+        ctx.beginPath();
+        ctx.roundRect(-0.4, -0.92, 1.85, 1.84, 0.35);
+        ctx.fill();
+      } else if (spec.id === 'twinoutboard9m') {
+        // Sportboat wrap-around windshield + radar T-top + bow sunpad
+        ctx.fillStyle = '#0f172a';
+        ctx.beginPath();
+        ctx.roundRect(-0.65, -0.92, 1.95, 1.84, 0.32);
+        ctx.fill();
+        ctx.fillStyle = spec.trimColor;
+        ctx.beginPath();
+        ctx.roundRect(1.65, -0.58, 1.35, 1.16, 0.25);
+        ctx.fill();
+      } else {
+        // 7m Center Console T-top
+        ctx.fillStyle = '#1e293b';
+        ctx.beginPath();
+        ctx.roundRect(-0.55, -0.58, 1.25, 1.16, 0.22);
+        ctx.fill();
+      }
     }
 
     // 6. THE 4 PHYSICAL PROTRUDING SIDE FENDERS (2 Port + 2 Starboard on EVERY boat!)
@@ -758,12 +822,40 @@ export class MarinaCanvasRenderer {
     ctx.lineTo(px, 0.5);
     ctx.stroke();
 
-    // 2. Prop Wash / Vectored Outboard Thrust Vector (Cyan)
-    const propScale = 0.00085;
-    const fx = -telemetry.propThrustBody.x * propScale;
-    const fy = -telemetry.propThrustBody.y * propScale;
-    if (Math.hypot(fx, fy) > 0.18) {
-      this.drawVectorArrow(ctx, vesselSpec.propPosX, 0, fx, fy, '#22d3ee');
+    // 2. Prop Wash / Vectored Outboard Thrust Vector(s) (Cyan)
+    if (vesselSpec.engineCount === 2) {
+      const twinScale = 0.0014;
+      const pFx = -telemetry.portThrustBody.x * twinScale;
+      const pFy = -telemetry.portThrustBody.y * twinScale;
+      if (Math.hypot(pFx, pFy) > 0.14) {
+        this.drawVectorArrow(
+          ctx,
+          vesselSpec.propPosX,
+          -vesselSpec.propLateralOffsetM,
+          pFx,
+          pFy,
+          '#22d3ee'
+        );
+      }
+      const sFx = -telemetry.stbdThrustBody.x * twinScale;
+      const sFy = -telemetry.stbdThrustBody.y * twinScale;
+      if (Math.hypot(sFx, sFy) > 0.14) {
+        this.drawVectorArrow(
+          ctx,
+          vesselSpec.propPosX,
+          vesselSpec.propLateralOffsetM,
+          sFx,
+          sFy,
+          '#22d3ee'
+        );
+      }
+    } else {
+      const propScale = 0.00085;
+      const fx = -telemetry.propThrustBody.x * propScale;
+      const fy = -telemetry.propThrustBody.y * propScale;
+      if (Math.hypot(fx, fy) > 0.18) {
+        this.drawVectorArrow(ctx, vesselSpec.propPosX, 0, fx, fy, '#22d3ee');
+      }
     }
 
     // 3. Right-Hand Prop Walk Lateral Stern Pull (Coral/Amber arrow at stern)
@@ -813,23 +905,39 @@ export class MarinaCanvasRenderer {
     const sinH = Math.sin(snap.playerHeadingRad);
     const spec = snap.vesselSpec;
 
-    // Propeller wash foam bubbles
-    const absT = Math.abs(snap.controls.throttle);
-    if (absT > 0.06 && Math.random() < absT * 0.9) {
-      const sternX = snap.playerX + spec.propPosX * cosH;
-      const sternY = snap.playerY + spec.propPosX * sinH;
-      const ejectDir = snap.controls.throttle >= 0 ? -1 : 1;
-      const jetSpeed = ejectDir * (2.5 + absT * 4.5);
-      this.particles.push({
-        x: sternX + (Math.random() - 0.5) * 0.4,
-        y: sternY + (Math.random() - 0.5) * 0.4,
-        vx: cosH * jetSpeed + (Math.random() - 0.5) * 0.8,
-        vy: sinH * jetSpeed + (Math.random() - 0.5) * 0.8,
-        life: 0,
-        maxLife: 0.7 + Math.random() * 0.5,
-        radius: 0.14 + Math.random() * 0.16,
-        color: 'rgba(224, 242, 254, ALPHA)',
-      });
+    // Propeller wash foam bubbles (single or twin propellers)
+    const propPlumes: Array<{ offsetY: number; throttle: number }> =
+      spec.engineCount === 2
+        ? [
+            {
+              offsetY: -spec.propLateralOffsetM,
+              throttle: snap.controls.throttlePort ?? snap.controls.throttle,
+            },
+            {
+              offsetY: spec.propLateralOffsetM,
+              throttle: snap.controls.throttleStbd ?? snap.controls.throttle,
+            },
+          ]
+        : [{ offsetY: 0, throttle: snap.controls.throttle }];
+
+    for (const plume of propPlumes) {
+      const absT = Math.abs(plume.throttle);
+      if (absT > 0.06 && Math.random() < absT * 0.9) {
+        const sternX = snap.playerX + spec.propPosX * cosH - plume.offsetY * sinH;
+        const sternY = snap.playerY + spec.propPosX * sinH + plume.offsetY * cosH;
+        const ejectDir = plume.throttle >= 0 ? -1 : 1;
+        const jetSpeed = ejectDir * (2.5 + absT * 4.5);
+        this.particles.push({
+          x: sternX + (Math.random() - 0.5) * 0.35,
+          y: sternY + (Math.random() - 0.5) * 0.35,
+          vx: cosH * jetSpeed + (Math.random() - 0.5) * 0.8,
+          vy: sinH * jetSpeed + (Math.random() - 0.5) * 0.8,
+          life: 0,
+          maxLife: 0.7 + Math.random() * 0.5,
+          radius: 0.14 + Math.random() * 0.16,
+          color: 'rgba(224, 242, 254, ALPHA)',
+        });
+      }
     }
 
     // Bow thruster bubble plume

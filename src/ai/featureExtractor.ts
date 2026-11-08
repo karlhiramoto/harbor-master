@@ -1,6 +1,6 @@
 import { clamp, normalizeAngleRad, windFromDegToWorldVelocity } from '../physics/hydrodynamics';
 import { MarinaLayout, MovingHazard, TargetBerth } from '../physics/marina';
-import { getHullPolygonVertices, VESSEL_SPECS } from '../physics/vessels';
+import { getHullPolygonVertices, VALID_VESSEL_IDS, VESSEL_SPECS } from '../physics/vessels';
 import { SimulationSnapshot } from '../physics/world';
 
 export const FEATURE_VECTOR_DIM = 20;
@@ -97,7 +97,7 @@ const HULL_SAMPLE_POINTS_CACHE: Record<
     SimulationSnapshot['vesselSpec']['id'],
     ReadonlyArray<HullSamplePoint>
   >;
-  for (const id of ['outboard7m', 'cruiser8m', 'sailboat12m'] as const) {
+  for (const id of VALID_VESSEL_IDS) {
     const spec = VESSEL_SPECS[id];
     const verts = getHullPolygonVertices(spec);
     const pts: HullSamplePoint[] = [];
@@ -330,14 +330,17 @@ export function computeCorridorPlan(
 
     const alignedNorth = Math.abs(normalizeAngleRad(-Math.PI / 2 - heading)) < 0.58;
 
-    if (px > 3.5 && Math.abs(normalizeAngleRad(Math.PI - heading)) > 0.52) {
-      // Stage 6 starts at x=12 facing East (0 deg): spin Clockwise (+PI/2 -> PI)
-      // while pulling West toward the wide x=8.6 basin!
-      activeWaypoint = { x: 8.6, y: 0.3, label: 'East Pivot Basin' };
+    const eastPivotThreshRad = snap.vesselSpec.engineCount === 2 ? 0.32 : 0.52;
+    if (px > 3.5 && Math.abs(normalizeAngleRad(Math.PI - heading)) > eastPivotThreshRad) {
+      // Stage 6 & Stage 12 start facing East (0 deg): spin Clockwise (+PI/2 -> PI)
+      // while holding in the wide East Pivot Basin!
+      const pivotX = snap.vesselSpec.engineCount === 2 ? Math.max(8.8, px) : 8.6;
+      const pivotY = snap.vesselSpec.engineCount === 2 ? 0.6 : 0.3;
+      activeWaypoint = { x: pivotX, y: pivotY, label: 'East Pivot Basin' };
       desiredHeadingRad =
         heading > -Math.PI / 2 && heading < Math.PI / 3 ? Math.PI / 2 : Math.PI;
       requiresStandingPivot = true;
-      pivotHoldCenter = { x: 8.6, y: 0.3 };
+      pivotHoldCenter = { x: pivotX, y: pivotY };
     } else if (Math.abs(px - throatX) > 2.3 && py > -4.5) {
       activeWaypoint = stagingWp;
       desiredHeadingRad = Math.atan2(stagingWp.y - py, stagingWp.x - px);

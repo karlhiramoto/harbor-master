@@ -65,6 +65,9 @@ function saveStageCompletion(stageId: string, rank: SavedStageBest['rank'], scor
 export interface HudCallbacks {
   onThrottleChange: (throttle: number) => void;
   onThrottleStep: (delta: number) => void;
+  onTwinThrottleChange?: (side: 'port' | 'stbd', throttle: number) => void;
+  onTwinThrottleStep?: (side: 'port' | 'stbd', delta: number) => void;
+  onToggleThrottleMode?: () => void;
   onHelmChange: (helm: number) => void;
   onHelmStep: (delta: number) => void;
   onBowThrusterChange: (thruster: number) => void;
@@ -99,12 +102,24 @@ export class ControlsHud {
   private readonly berthStatusEl: HTMLElement;
   private readonly toastEl: HTMLElement;
 
+  private readonly throttleLblEl: HTMLElement;
+  private readonly throttleModeBtnEl: HTMLButtonElement;
+  private readonly singleThrottleWrapEl: HTMLElement;
+  private readonly twinThrottleWrapEl: HTMLElement;
   private readonly throttleTrackEl: HTMLElement;
   private readonly throttleKnobEl: HTMLElement;
+  private readonly portThrottleTrackEl: HTMLElement;
+  private readonly portThrottleKnobEl: HTMLElement;
+  private readonly stbdThrottleTrackEl: HTMLElement;
+  private readonly stbdThrottleKnobEl: HTMLElement;
   private readonly helmTrackEl: HTMLElement;
   private readonly helmKnobEl: HTMLElement;
   private readonly keyUpBtn: HTMLButtonElement;
   private readonly keyDownBtn: HTMLButtonElement;
+  private readonly portUpBtn: HTMLButtonElement;
+  private readonly portDownBtn: HTMLButtonElement;
+  private readonly stbdUpBtn: HTMLButtonElement;
+  private readonly stbdDownBtn: HTMLButtonElement;
   private readonly keyLeftBtn: HTMLButtonElement;
   private readonly keyRightBtn: HTMLButtonElement;
   private readonly thrusterRowEl: HTMLElement;
@@ -172,9 +187,15 @@ export class ControlsHud {
     bannerZone.append(this.briefingEl, this.berthStatusEl, this.toastEl);
     canvasViewportEl.append(bannerZone);
 
-    // 1. Left Throttle Telegraph Lever + ↑ / ↓ Key Steppers
+    // 1. Left Throttle Telegraph Lever(s) (Single or Twin Port/Starboard + Unified/Split Toggle)
     const throttleCard = el('div', 'throttle-card');
-    const throttleLbl = el('span', 'stat-label', 'Throttle (↑/↓ · W/S)');
+    this.throttleLblEl = el('span', 'stat-label', 'Throttle (↑/↓ · W/S)');
+    this.throttleModeBtnEl = btn('🔗 Mode: Unified (U)', 'hud-btn throttle-mode-btn', () => {
+      this.callbacks.onToggleThrottleMode?.();
+    });
+    this.throttleModeBtnEl.style.display = 'none';
+
+    this.singleThrottleWrapEl = el('div', 'single-throttle-wrap');
     this.keyUpBtn = btn('▲', 'key-cap-btn', () => this.callbacks.onThrottleStep(0.1));
     this.keyUpBtn.title = 'Increase Forward Throttle (Up Arrow / W)';
 
@@ -186,15 +207,62 @@ export class ControlsHud {
 
     this.keyDownBtn = btn('▼', 'key-cap-btn', () => this.callbacks.onThrottleStep(-0.1));
     this.keyDownBtn.title = 'Decrease / Reverse Throttle (Down Arrow / S)';
+    this.singleThrottleWrapEl.append(this.keyUpBtn, this.throttleTrackEl, this.keyDownBtn);
+
+    // Twin-Engine Port & Starboard Levers
+    this.twinThrottleWrapEl = el('div', 'twin-throttle-wrap');
+    this.twinThrottleWrapEl.style.display = 'none';
+
+    const portCol = el('div', 'twin-lever-col');
+    const portTag = el('span', 'stat-label', 'PORT (W/S)');
+    this.portUpBtn = btn('▲', 'key-cap-btn', () =>
+      this.callbacks.onTwinThrottleStep
+        ? this.callbacks.onTwinThrottleStep('port', 0.1)
+        : this.callbacks.onThrottleStep(0.1)
+    );
+    this.portUpBtn.title = 'Increase Port Engine Throttle (W)';
+    this.portThrottleTrackEl = el('div', 'throttle-track');
+    this.portThrottleTrackEl.id = 'throttle-port-track';
+    this.portThrottleKnobEl = el('div', 'throttle-knob', 'N');
+    this.portThrottleTrackEl.append(el('div', 'throttle-center-line'), this.portThrottleKnobEl);
+    this.portDownBtn = btn('▼', 'key-cap-btn', () =>
+      this.callbacks.onTwinThrottleStep
+        ? this.callbacks.onTwinThrottleStep('port', -0.1)
+        : this.callbacks.onThrottleStep(-0.1)
+    );
+    this.portDownBtn.title = 'Decrease / Reverse Port Engine Throttle (S)';
+    portCol.append(portTag, this.portUpBtn, this.portThrottleTrackEl, this.portDownBtn);
+
+    const stbdCol = el('div', 'twin-lever-col');
+    const stbdTag = el('span', 'stat-label', 'STBD (↑/↓)');
+    this.stbdUpBtn = btn('▲', 'key-cap-btn', () =>
+      this.callbacks.onTwinThrottleStep
+        ? this.callbacks.onTwinThrottleStep('stbd', 0.1)
+        : this.callbacks.onThrottleStep(0.1)
+    );
+    this.stbdUpBtn.title = 'Increase Starboard Engine Throttle (Up Arrow / I)';
+    this.stbdThrottleTrackEl = el('div', 'throttle-track');
+    this.stbdThrottleTrackEl.id = 'throttle-stbd-track';
+    this.stbdThrottleKnobEl = el('div', 'throttle-knob', 'N');
+    this.stbdThrottleTrackEl.append(el('div', 'throttle-center-line'), this.stbdThrottleKnobEl);
+    this.stbdDownBtn = btn('▼', 'key-cap-btn', () =>
+      this.callbacks.onTwinThrottleStep
+        ? this.callbacks.onTwinThrottleStep('stbd', -0.1)
+        : this.callbacks.onThrottleStep(-0.1)
+    );
+    this.stbdDownBtn.title = 'Decrease / Reverse Starboard Engine Throttle (Down Arrow / K)';
+    stbdCol.append(stbdTag, this.stbdUpBtn, this.stbdThrottleTrackEl, this.stbdDownBtn);
+
+    this.twinThrottleWrapEl.append(portCol, stbdCol);
 
     const stopBtn = btn('NEUTRAL (Space)', 'hud-btn', () => {
       this.callbacks.onThrottleChange(0);
     });
     throttleCard.append(
-      throttleLbl,
-      this.keyUpBtn,
-      this.throttleTrackEl,
-      this.keyDownBtn,
+      this.throttleLblEl,
+      this.throttleModeBtnEl,
+      this.singleThrottleWrapEl,
+      this.twinThrottleWrapEl,
       stopBtn
     );
 
@@ -304,28 +372,46 @@ export class ControlsHud {
   }
 
   private wireThrottleDrag(): void {
-    let dragging = false;
-    const applyPointer = (clientY: number) => {
-      const rect = this.throttleTrackEl.getBoundingClientRect();
-      const norm = 1 - ((clientY - rect.top) / rect.height) * 2;
-      const clamped = Math.max(-1, Math.min(1, norm));
-      const snapped = Math.abs(clamped) < 0.08 ? 0 : clamped;
-      this.callbacks.onThrottleChange(snapped);
+    const bindTrack = (trackEl: HTMLElement, onVal: (snapped: number) => void): void => {
+      let dragging = false;
+      const applyPointer = (clientY: number) => {
+        const rect = trackEl.getBoundingClientRect();
+        const norm = 1 - ((clientY - rect.top) / rect.height) * 2;
+        const clamped = Math.max(-1, Math.min(1, norm));
+        const snapped = Math.abs(clamped) < 0.08 ? 0 : clamped;
+        onVal(snapped);
+      };
+
+      trackEl.addEventListener('pointerdown', (e) => {
+        dragging = true;
+        trackEl.setPointerCapture(e.pointerId);
+        applyPointer(e.clientY);
+      });
+      trackEl.addEventListener('pointermove', (e) => {
+        if (dragging) applyPointer(e.clientY);
+      });
+      const stopDrag = () => {
+        dragging = false;
+      };
+      trackEl.addEventListener('pointerup', stopDrag);
+      trackEl.addEventListener('pointercancel', stopDrag);
     };
 
-    this.throttleTrackEl.addEventListener('pointerdown', (e) => {
-      dragging = true;
-      this.throttleTrackEl.setPointerCapture(e.pointerId);
-      applyPointer(e.clientY);
+    bindTrack(this.throttleTrackEl, (snapped) => this.callbacks.onThrottleChange(snapped));
+    bindTrack(this.portThrottleTrackEl, (snapped) => {
+      if (this.callbacks.onTwinThrottleChange) {
+        this.callbacks.onTwinThrottleChange('port', snapped);
+      } else {
+        this.callbacks.onThrottleChange(snapped);
+      }
     });
-    this.throttleTrackEl.addEventListener('pointermove', (e) => {
-      if (dragging) applyPointer(e.clientY);
+    bindTrack(this.stbdThrottleTrackEl, (snapped) => {
+      if (this.callbacks.onTwinThrottleChange) {
+        this.callbacks.onTwinThrottleChange('stbd', snapped);
+      } else {
+        this.callbacks.onThrottleChange(snapped);
+      }
     });
-    const stopDrag = () => {
-      dragging = false;
-    };
-    this.throttleTrackEl.addEventListener('pointerup', stopDrag);
-    this.throttleTrackEl.addEventListener('pointercancel', stopDrag);
   }
 
   private wireHelmDrag(): void {
@@ -414,12 +500,40 @@ export class ControlsHud {
     const shelterNote = snap.shelterFactor < 0.85 ? ' (Lee)' : '';
     this.windValEl.textContent = `${gustKn} kn ${compassDirs[compassIdx]}${shelterNote}`;
 
-    // Update Throttle Knob Position
-    const tPct = (1 - snap.controls.throttle) * 50;
-    this.throttleKnobEl.style.top = `${Math.max(10, Math.min(90, tPct))}%`;
-    const tInt = Math.round(snap.controls.throttle * 100);
-    this.throttleKnobEl.textContent =
-      Math.abs(tInt) < 4 ? 'N' : tInt > 0 ? `F${tInt}` : `R${Math.abs(tInt)}`;
+    // Update Single vs. Twin Throttle Levers & Mode Toggle
+    const isTwin = snap.vesselSpec.engineCount === 2;
+    const mode = isTwin
+      ? (snap.controls.throttleMode ?? snap.vesselSpec.defaultThrottleMode)
+      : 'unified';
+    const isSeparate = isTwin && mode === 'separate';
+
+    this.throttleModeBtnEl.style.display = isTwin ? 'inline-flex' : 'none';
+    this.singleThrottleWrapEl.style.display = isTwin ? 'none' : 'flex';
+    this.twinThrottleWrapEl.style.display = isTwin ? 'flex' : 'none';
+
+    if (isTwin) {
+      this.throttleLblEl.textContent = isSeparate
+        ? 'Twin Throttles: Split'
+        : 'Twin Throttles: Unified';
+      this.throttleModeBtnEl.textContent = isSeparate
+        ? '⚡ Split (U) → Unified'
+        : '🔗 Unified (U) → Split';
+      this.throttleModeBtnEl.classList.toggle('active-toggle', isSeparate);
+    } else {
+      this.throttleLblEl.textContent = 'Throttle (↑/↓ · W/S)';
+    }
+
+    const updateKnob = (knobEl: HTMLElement, val: number): void => {
+      const pct = (1 - val) * 50;
+      knobEl.style.top = `${Math.max(10, Math.min(90, pct))}%`;
+      const tInt = Math.round(val * 100);
+      knobEl.textContent =
+        Math.abs(tInt) < 4 ? 'N' : tInt > 0 ? `F${tInt}` : `R${Math.abs(tInt)}`;
+    };
+
+    updateKnob(this.throttleKnobEl, snap.controls.throttle);
+    updateKnob(this.portThrottleKnobEl, snap.controls.throttlePort ?? snap.controls.throttle);
+    updateKnob(this.stbdThrottleKnobEl, snap.controls.throttleStbd ?? snap.controls.throttle);
 
     // Update Helm Knob Position
     const hPct = (snap.controls.helm + 1) * 50;
@@ -431,6 +545,22 @@ export class ControlsHud {
     if (keyHighlights) {
       this.keyUpBtn.classList.toggle('active', keyHighlights.up);
       this.keyDownBtn.classList.toggle('active', keyHighlights.down);
+      this.portUpBtn.classList.toggle(
+        'active',
+        isSeparate ? keyHighlights.portUp : keyHighlights.up
+      );
+      this.portDownBtn.classList.toggle(
+        'active',
+        isSeparate ? keyHighlights.portDown : keyHighlights.down
+      );
+      this.stbdUpBtn.classList.toggle(
+        'active',
+        isSeparate ? keyHighlights.stbdUp : keyHighlights.up
+      );
+      this.stbdDownBtn.classList.toggle(
+        'active',
+        isSeparate ? keyHighlights.stbdDown : keyHighlights.down
+      );
       this.keyLeftBtn.classList.toggle('active', keyHighlights.left);
       this.keyRightBtn.classList.toggle('active', keyHighlights.right);
     }
@@ -506,8 +636,9 @@ export class ControlsHud {
     const grid = el('div', 'help-grid');
     const items: Array<[string, string]> = [
       ['↑ / ↓  or  W / S', 'Adjust Throttle Ahead / Astern (pauses safely on Neutral when crossing 0%).'],
+      ['U (Twin-Engine Boats)', 'Toggle between Unified (linked levers) and Split (separate Port W/S & Starboard ↑/↓ or I/K throttles).'],
       ['← / →  or  A / D', 'Steer Helm Port / Starboard (tap for 5° nudge, hold to sweep wheel).'],
-      ['Space  ·  C', 'Space cuts Throttle to Neutral immediately; C centers Helm to 0°.'],
+      ['Space  ·  C', 'Space cuts all Throttles to Neutral immediately; C centers Helm to 0°.'],
       ['Q / E (8m Cruiser)', 'Fire Proportional Bow Thruster Port (Q) or Starboard (E) to walk sideways.'],
       ['Finish & Next Stage', 'Stop (< 0.65 kn) aligned inside the dashed slip for 2.5s OR press M to tie lines & finish immediately!'],
       ['Bow / Mid / Aft Fenders', 'Slide your 2 Port & 2 Starboard fenders to shield bow stems or quarters from yacht scrapes!'],

@@ -277,6 +277,34 @@ body,
   min-width: 100px;
 }
 
+.single-throttle-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.twin-throttle-wrap {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.twin-lever-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+
+.throttle-mode-btn {
+  padding: 4px 8px;
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
 .throttle-track {
   position: relative;
   width: 44px;

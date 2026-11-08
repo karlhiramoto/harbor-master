@@ -1,4 +1,11 @@
-export type VesselId = 'outboard7m' | 'cruiser8m' | 'sailboat12m';
+export type VesselId =
+  | 'outboard7m'
+  | 'cruiser8m'
+  | 'twinoutboard9m'
+  | 'catamaran11m'
+  | 'sailboat12m';
+
+export type ThrottleMode = 'unified' | 'separate';
 
 export type FenderRigMode = 'bow' | 'midships' | 'quarter';
 
@@ -43,7 +50,13 @@ export interface VesselSpec {
   yawInertiaKgM2: number;
   /** Propulsion layout */
   propulsion: 'outboard' | 'inboard-diesel';
-  /** Maximum forward thrust (N) */
+  /** Number of propulsion engines (1 = single screw/outboard, 2 = twin port & starboard engines) */
+  engineCount: 1 | 2;
+  /** Lateral offset from centerline to each propeller shaft/outboard (m, 0 for single engine) */
+  propLateralOffsetM: number;
+  /** Default throttle link mode when spawning this vessel */
+  defaultThrottleMode: ThrottleMode;
+  /** Maximum forward thrust (N, combined across all engines) */
   maxForwardThrustN: number;
   /** Maximum reverse thrust (N) */
   maxReverseThrustN: number;
@@ -117,6 +130,9 @@ export const VESSEL_SPECS: Record<VesselId, VesselSpec> = {
     addedMassSwayKg: 980,
     yawInertiaKgM2: 6400,
     propulsion: 'outboard',
+    engineCount: 1,
+    propLateralOffsetM: 0,
+    defaultThrottleMode: 'unified',
     maxForwardThrustN: 2950,
     maxReverseThrustN: 2100,
     maxHelmDeg: 32,
@@ -175,6 +191,9 @@ export const VESSEL_SPECS: Record<VesselId, VesselSpec> = {
     addedMassSwayKg: 2450,
     yawInertiaKgM2: 19800,
     propulsion: 'outboard',
+    engineCount: 1,
+    propLateralOffsetM: 0,
+    defaultThrottleMode: 'unified',
     maxForwardThrustN: 4600,
     maxReverseThrustN: 3300,
     maxHelmDeg: 30,
@@ -218,6 +237,129 @@ export const VESSEL_SPECS: Record<VesselId, VesselSpec> = {
     ],
   },
 
+  twinoutboard9m: {
+    id: 'twinoutboard9m',
+    name: '9m Twin-Outboard Motorboat',
+    shortName: '9m Twin Outboard',
+    category: 'Twin 200 HP Outboards · Unified or Split Throttle',
+    description:
+      'High-output offshore sportboat rigged with twin counter-rotating 200 HP steerable outboards. Run with Unified Throttle for effortless vectored steering, or switch to Split Throttle (U) for differential twin-engine docking.',
+    tip: 'Press U (or tap Unified/Split) to switch between linked single-lever throttle and independent Port (W/S) & Starboard (↑/↓) throttles!',
+    loa: 9.0,
+    beam: 2.95,
+    massKg: 3450,
+    addedMassSurgeKg: 510,
+    addedMassSwayKg: 2650,
+    yawInertiaKgM2: 24500,
+    propulsion: 'outboard',
+    engineCount: 2,
+    propLateralOffsetM: 0.68,
+    defaultThrottleMode: 'unified',
+    maxForwardThrustN: 5600,
+    maxReverseThrustN: 4000,
+    maxHelmDeg: 30,
+    propPosX: -4.4,
+    hasBowThruster: false,
+    bowThrusterMaxN: 0,
+    bowThrusterPosX: 0,
+    thrusterCrossflowHalfKnots: 3.5,
+    reversePropWalkPortN: 20,
+    forwardPropWalkStbdN: 10,
+    propWashRudderCoupling: 0,
+    propInertiaTauSec: 0.30,
+    propMaxSlewPerSec: 2.2,
+    surgeDragLinear: 310,
+    surgeDragQuad: 185,
+    swayDragLinear: 1620,
+    swayDragQuad: 1680,
+    forwardPivotBiasM: 1.95,
+    reversePivotBiasM: -1.45,
+    yawDragLinear: 7600,
+    yawDragQuad: 6100,
+    lateralWindAreaM2: 12.8,
+    frontalWindAreaM2: 5.8,
+    windCenterOffsetX: 0.72,
+    heelComplianceDegPerKN: 2.1,
+    hullColor: '#0a9396',
+    deckColor: '#f1faee',
+    trimColor: '#ee9b00',
+    hullProfile: [
+      [0.5, 0.0],
+      [0.38, 0.29],
+      [0.18, 0.46],
+      [-0.1, 0.5],
+      [-0.44, 0.47],
+      [-0.5, 0.38],
+      [-0.5, -0.38],
+      [-0.44, -0.47],
+      [-0.1, -0.5],
+      [0.18, -0.46],
+      [0.38, -0.29],
+    ],
+  },
+
+  catamaran11m: {
+    id: 'catamaran11m',
+    name: '11m Cruising Catamaran',
+    shortName: '11m Catamaran',
+    category: 'Twin 40 HP Hull Saildrives · Twin Rudders + Helm',
+    description:
+      'Wide-beam twin-hull cruising catamaran with port and starboard diesel saildrives set 3.5m apart and linked twin rudders. Spins on a dime using opposing Port/Starboard throttles while the helm steers under headway or sternway.',
+    tip: 'Use Split Throttles (W/S Port, ↑/↓ Starboard) in opposite directions to pivot 360° in place, and use Helm (A/D or ←/→) when making way!',
+    loa: 11.0,
+    beam: 4.8,
+    massKg: 7800,
+    addedMassSurgeKg: 760,
+    addedMassSwayKg: 6200,
+    yawInertiaKgM2: 82000,
+    propulsion: 'inboard-diesel',
+    engineCount: 2,
+    propLateralOffsetM: 1.75,
+    defaultThrottleMode: 'separate',
+    maxForwardThrustN: 6800,
+    maxReverseThrustN: 5400,
+    maxHelmDeg: 32,
+    propPosX: -4.65,
+    hasBowThruster: false,
+    bowThrusterMaxN: 0,
+    bowThrusterPosX: 0,
+    thrusterCrossflowHalfKnots: 3.5,
+    reversePropWalkPortN: 35,
+    forwardPropWalkStbdN: 15,
+    propWashRudderCoupling: 0.65,
+    propInertiaTauSec: 0.42,
+    propMaxSlewPerSec: 1.8,
+    surgeDragLinear: 390,
+    surgeDragQuad: 240,
+    swayDragLinear: 4400,
+    swayDragQuad: 4300,
+    forwardPivotBiasM: 2.1,
+    reversePivotBiasM: -1.8,
+    yawDragLinear: 24500,
+    yawDragQuad: 21500,
+    lateralWindAreaM2: 21.5,
+    frontalWindAreaM2: 11.2,
+    windCenterOffsetX: 0.85,
+    heelComplianceDegPerKN: 0.75,
+    hullColor: '#264653',
+    deckColor: '#f8fafc',
+    trimColor: '#38bdf8',
+    hullProfile: [
+      [0.5, 0.36],
+      [0.46, 0.44],
+      [0.22, 0.49],
+      [-0.15, 0.5],
+      [-0.46, 0.48],
+      [-0.5, 0.42],
+      [-0.5, -0.42],
+      [-0.46, -0.48],
+      [-0.15, -0.5],
+      [0.22, -0.49],
+      [0.46, -0.44],
+      [0.5, -0.36],
+    ],
+  },
+
   sailboat12m: {
     id: 'sailboat12m',
     name: '12m Auxiliary Sailboat',
@@ -233,6 +375,9 @@ export const VESSEL_SPECS: Record<VesselId, VesselSpec> = {
     addedMassSwayKg: 9400,
     yawInertiaKgM2: 96000,
     propulsion: 'inboard-diesel',
+    engineCount: 1,
+    propLateralOffsetM: 0,
+    defaultThrottleMode: 'unified',
     maxForwardThrustN: 5600,
     maxReverseThrustN: 4300,
     maxHelmDeg: 35,
@@ -279,7 +424,13 @@ export const VESSEL_SPECS: Record<VesselId, VesselSpec> = {
   },
 };
 
-export const VALID_VESSEL_IDS: ReadonlyArray<VesselId> = ['outboard7m', 'cruiser8m', 'sailboat12m'];
+export const VALID_VESSEL_IDS: ReadonlyArray<VesselId> = [
+  'outboard7m',
+  'cruiser8m',
+  'twinoutboard9m',
+  'catamaran11m',
+  'sailboat12m',
+];
 export const VALID_FENDER_RIGS: ReadonlyArray<FenderRigMode> = ['bow', 'midships', 'quarter'];
 
 export function sanitizeVesselId(input: unknown): VesselId {
