@@ -10,6 +10,7 @@ import { SimulationSnapshot } from '../physics/world';
 import { BerthCompletionReport, ScoreIncident } from '../physics/scoring';
 import { clampWindKnots, normalizeCompassDeg } from '../physics/hydrodynamics';
 import { ActiveArrowHighlights } from '../input/keyboardController';
+import { getLocalizedStage, getLocalizedVessel, getUiStrings } from '../i18n';
 
 const STORAGE_KEY = 'marina_docking_progress_v1';
 
@@ -135,51 +136,55 @@ export class ControlsHud {
 
   constructor(container: HTMLElement, canvasViewportEl: HTMLElement, callbacks: HudCallbacks) {
     this.callbacks = callbacks;
+    const t = getUiStrings();
+    const initialStageLoc = getLocalizedStage(this.currentStage);
 
     // Top Nautical Telemetry Strip
     const topBar = el('header', 'hud-top-bar');
     const brandGroup = el('div', 'brand-group');
-    const titleEl = el('h1', 'app-title', 'Harbor Master');
-    this.stageBadgeEl = el('span', 'stage-tag', this.currentStage.title);
+    const titleEl = el('h1', 'app-title', t.appTitle);
+    this.stageBadgeEl = el('span', 'stage-tag', initialStageLoc.title);
     brandGroup.append(titleEl, this.stageBadgeEl);
 
     const strip = el('div', 'telemetry-strip');
     this.scoreValEl = el('span', 'stat-value good', '1000');
     this.repairValEl = el('span', 'stat-value good', '$0');
-    this.speedValEl = el('span', 'stat-value', '0.0 kn');
-    this.windValEl = el('span', 'stat-value warn', '2 kn N');
+    this.speedValEl = el('span', 'stat-value', `0.0 ${t.knotsUnit}`);
+    this.windValEl = el('span', 'stat-value warn', `2 ${t.knotsUnit} ${t.compassDirs[0]}`);
 
     strip.append(
-      statChip('Score', this.scoreValEl),
-      statChip('Repair Bill', this.repairValEl),
-      statChip('Speed', this.speedValEl),
-      statChip('Wind', this.windValEl)
+      statChip(t.scoreLabel, this.scoreValEl),
+      statChip(t.repairBillLabel, this.repairValEl),
+      statChip(t.speedLabel, this.speedValEl),
+      statChip(t.windLabel, this.windValEl)
     );
 
     const actions = el('div', 'top-actions');
-    const stagesBtn = btn('Stages / Wind', 'hud-btn primary', () => this.openSetupModal());
-    this.autoPilotBtn = btn('🤖 Auto-Pilot: OFF (P)', 'hud-btn', () => {
+    const stagesBtn = btn(t.stagesWindBtn, 'hud-btn primary', () => this.openSetupModal());
+    this.autoPilotBtn = btn(t.autoPilotOffBtn, 'hud-btn', () => {
       if (!this.callbacks.onToggleAutoPilot) return;
       const on = this.callbacks.onToggleAutoPilot();
       this.setAutoPilotActive(on);
     });
-    const retryBtn = btn('Retry (R)', 'hud-btn', () => this.callbacks.onResetStage());
-    const xrayBtn = btn('X-Ray: ON', 'hud-btn active-toggle', () => {
+    const retryBtn = btn(t.retryBtn, 'hud-btn', () => this.callbacks.onResetStage());
+    const xrayBtn = btn(t.xrayOnBtn, 'hud-btn active-toggle', () => {
       const on = this.callbacks.onToggleXRay();
-      xrayBtn.textContent = on ? 'X-Ray: ON' : 'X-Ray: OFF';
+      const s = getUiStrings();
+      xrayBtn.textContent = on ? s.xrayOnBtn : s.xrayOffBtn;
       xrayBtn.classList.toggle('active-toggle', on);
     });
-    const muteBtn = btn('Sound: ON', 'hud-btn', () => {
+    const muteBtn = btn(t.soundOnBtn, 'hud-btn', () => {
       const muted = this.callbacks.onToggleMute();
-      muteBtn.textContent = muted ? 'Sound: Muted' : 'Sound: ON';
+      const s = getUiStrings();
+      muteBtn.textContent = muted ? s.soundMutedBtn : s.soundOnBtn;
     });
-    const helpBtn = btn('? Help (H)', 'hud-btn', () => this.openHelpModal());
+    const helpBtn = btn(t.helpBtn, 'hud-btn', () => this.openHelpModal());
     actions.append(stagesBtn, this.autoPilotBtn, retryBtn, xrayBtn, muteBtn, helpBtn);
     topBar.append(brandGroup, strip, actions);
 
     // Center Live Briefing, Live Docking Checklist Pill & Incident Banner
     const bannerZone = el('div', 'hud-banner-zone');
-    this.briefingEl = el('div', 'briefing-bar', this.currentStage.briefing);
+    this.briefingEl = el('div', 'briefing-bar', initialStageLoc.briefing);
     this.berthStatusEl = el('div', 'berth-checklist-pill');
     this.berthStatusEl.style.display = 'none';
     this.toastEl = el('div', 'incident-toast');
@@ -189,15 +194,15 @@ export class ControlsHud {
 
     // 1. Left Throttle Telegraph Lever(s) (Single or Twin Port/Starboard + Unified/Split Toggle)
     const throttleCard = el('div', 'throttle-card');
-    this.throttleLblEl = el('span', 'stat-label', 'Throttle (↑/↓ · W/S)');
-    this.throttleModeBtnEl = btn('🔗 Mode: Unified (U)', 'hud-btn throttle-mode-btn', () => {
+    this.throttleLblEl = el('span', 'stat-label', t.throttleSingleLabel);
+    this.throttleModeBtnEl = btn(t.modeUnifiedBtn, 'hud-btn throttle-mode-btn', () => {
       this.callbacks.onToggleThrottleMode?.();
     });
     this.throttleModeBtnEl.style.display = 'none';
 
     this.singleThrottleWrapEl = el('div', 'single-throttle-wrap');
     this.keyUpBtn = btn('▲', 'key-cap-btn', () => this.callbacks.onThrottleStep(0.1));
-    this.keyUpBtn.title = 'Increase Forward Throttle (Up Arrow / W)';
+    this.keyUpBtn.title = t.increaseThrottleTooltip;
 
     this.throttleTrackEl = el('div', 'throttle-track');
     this.throttleTrackEl.id = 'throttle-lever-track';
@@ -206,7 +211,7 @@ export class ControlsHud {
     this.throttleTrackEl.append(centerLine, this.throttleKnobEl);
 
     this.keyDownBtn = btn('▼', 'key-cap-btn', () => this.callbacks.onThrottleStep(-0.1));
-    this.keyDownBtn.title = 'Decrease / Reverse Throttle (Down Arrow / S)';
+    this.keyDownBtn.title = t.decreaseThrottleTooltip;
     this.singleThrottleWrapEl.append(this.keyUpBtn, this.throttleTrackEl, this.keyDownBtn);
 
     // Twin-Engine Port & Starboard Levers
@@ -214,13 +219,13 @@ export class ControlsHud {
     this.twinThrottleWrapEl.style.display = 'none';
 
     const portCol = el('div', 'twin-lever-col');
-    const portTag = el('span', 'stat-label', 'PORT (W/S)');
+    const portTag = el('span', 'stat-label', t.portLeverLabel);
     this.portUpBtn = btn('▲', 'key-cap-btn', () =>
       this.callbacks.onTwinThrottleStep
         ? this.callbacks.onTwinThrottleStep('port', 0.1)
         : this.callbacks.onThrottleStep(0.1)
     );
-    this.portUpBtn.title = 'Increase Port Engine Throttle (W)';
+    this.portUpBtn.title = t.increasePortThrottleTooltip;
     this.portThrottleTrackEl = el('div', 'throttle-track');
     this.portThrottleTrackEl.id = 'throttle-port-track';
     this.portThrottleKnobEl = el('div', 'throttle-knob', 'N');
@@ -230,17 +235,17 @@ export class ControlsHud {
         ? this.callbacks.onTwinThrottleStep('port', -0.1)
         : this.callbacks.onThrottleStep(-0.1)
     );
-    this.portDownBtn.title = 'Decrease / Reverse Port Engine Throttle (S)';
+    this.portDownBtn.title = t.decreasePortThrottleTooltip;
     portCol.append(portTag, this.portUpBtn, this.portThrottleTrackEl, this.portDownBtn);
 
     const stbdCol = el('div', 'twin-lever-col');
-    const stbdTag = el('span', 'stat-label', 'STBD (↑/↓)');
+    const stbdTag = el('span', 'stat-label', t.stbdLeverLabel);
     this.stbdUpBtn = btn('▲', 'key-cap-btn', () =>
       this.callbacks.onTwinThrottleStep
         ? this.callbacks.onTwinThrottleStep('stbd', 0.1)
         : this.callbacks.onThrottleStep(0.1)
     );
-    this.stbdUpBtn.title = 'Increase Starboard Engine Throttle (Up Arrow / I)';
+    this.stbdUpBtn.title = t.increaseStbdThrottleTooltip;
     this.stbdThrottleTrackEl = el('div', 'throttle-track');
     this.stbdThrottleTrackEl.id = 'throttle-stbd-track';
     this.stbdThrottleKnobEl = el('div', 'throttle-knob', 'N');
@@ -250,12 +255,12 @@ export class ControlsHud {
         ? this.callbacks.onTwinThrottleStep('stbd', -0.1)
         : this.callbacks.onThrottleStep(-0.1)
     );
-    this.stbdDownBtn.title = 'Decrease / Reverse Starboard Engine Throttle (Down Arrow / K)';
+    this.stbdDownBtn.title = t.decreaseStbdThrottleTooltip;
     stbdCol.append(stbdTag, this.stbdUpBtn, this.stbdThrottleTrackEl, this.stbdDownBtn);
 
     this.twinThrottleWrapEl.append(portCol, stbdCol);
 
-    const stopBtn = btn('NEUTRAL (Space)', 'hud-btn', () => {
+    const stopBtn = btn(t.neutralBtn, 'hud-btn', () => {
       this.callbacks.onThrottleChange(0);
     });
     throttleCard.append(
@@ -269,13 +274,13 @@ export class ControlsHud {
     // 2. Center Seamanship Utility Bar (4-Fender Rig Presets + Cleat Lasso + Camera)
     const centerBar = el('div', 'center-utility-bar');
     const rigGroup = el('div', 'rig-segment-group');
-    const rigTitle = el('span', 'stat-label', 'Fenders:');
+    const rigTitle = el('span', 'stat-label', t.fendersLabel);
     rigGroup.append(rigTitle);
 
     for (const [mode, label] of [
-      ['bow', 'Bow'],
-      ['midships', 'Mid'],
-      ['quarter', 'Aft'],
+      ['bow', t.fenderBow],
+      ['midships', t.fenderMid],
+      ['quarter', t.fenderAft],
     ] as const) {
       const b = btn(label, mode === 'midships' ? 'hud-btn active-toggle' : 'hud-btn', () => {
         this.callbacks.onSelectFenderRig(mode);
@@ -284,13 +289,14 @@ export class ControlsHud {
       rigGroup.append(b);
     }
 
-    this.lassoBtnEl = btn('Cleat Line (M)', 'hud-btn lasso-btn', () => {
+    this.lassoBtnEl = btn(t.cleatLineDefaultBtn, 'hud-btn lasso-btn', () => {
       this.callbacks.onToggleSpringLine();
     });
 
-    const camBtn = btn('Cam: North-Up', 'hud-btn', () => {
+    const camBtn = btn(t.camNorthUpBtn, 'hud-btn', () => {
       const boatUp = this.callbacks.onToggleCameraMode();
-      camBtn.textContent = boatUp ? 'Cam: Boat-Up' : 'Cam: North-Up';
+      const s = getUiStrings();
+      camBtn.textContent = boatUp ? s.camBoatUpBtn : s.camNorthUpBtn;
       camBtn.classList.toggle('active-toggle', boatUp);
     });
 
@@ -302,7 +308,7 @@ export class ControlsHud {
       const z = this.callbacks.onResetZoom();
       this.setZoomReadout(z);
     });
-    this.zoomResetBtn.title = 'Tap to reset camera zoom to 100%';
+    this.zoomResetBtn.title = t.zoomResetTooltip;
     const zoomInBtn = btn('+', 'hud-btn', () => {
       const z = this.callbacks.onZoomDelta(0.18);
       this.setZoomReadout(z);
@@ -313,16 +319,16 @@ export class ControlsHud {
     // 3. Right Helm Wheel + ◀ / ▶ Arrow Steppers & Bow Thruster Rocker
     const helmCluster = el('div', 'helm-cluster');
     this.thrusterRowEl = el('div', 'thruster-row');
-    const btPortBtn = el('button', 'thruster-btn', '◀ BOW PORT (Q)');
-    const btStbdBtn = el('button', 'thruster-btn', 'BOW STBD (E) ▶');
+    const btPortBtn = el('button', 'thruster-btn', t.bowPortBtn);
+    const btStbdBtn = el('button', 'thruster-btn', t.bowStbdBtn);
     this.wireHoldButton(btPortBtn, -1);
     this.wireHoldButton(btStbdBtn, 1);
     this.thrusterRowEl.append(btPortBtn, btStbdBtn);
 
-    const helmLbl = el('span', 'stat-label', 'Helm (←/→ · A/D)');
+    const helmLbl = el('span', 'stat-label', t.helmLabel);
     const helmRow = el('div', 'helm-row-with-keys');
     this.keyLeftBtn = btn('◀', 'key-cap-btn', () => this.callbacks.onHelmStep(-0.14));
-    this.keyLeftBtn.title = 'Turn Helm Port / Left (Left Arrow / A)';
+    this.keyLeftBtn.title = t.helmLeftTooltip;
 
     this.helmTrackEl = el('div', 'helm-slider-track');
     this.helmTrackEl.id = 'helm-wheel-track';
@@ -331,10 +337,10 @@ export class ControlsHud {
     this.helmTrackEl.append(helmCenterTick, this.helmKnobEl);
 
     this.keyRightBtn = btn('▶', 'key-cap-btn', () => this.callbacks.onHelmStep(0.14));
-    this.keyRightBtn.title = 'Turn Helm Starboard / Right (Right Arrow / D)';
+    this.keyRightBtn.title = t.helmRightTooltip;
     helmRow.append(this.keyLeftBtn, this.helmTrackEl, this.keyRightBtn);
 
-    const centerHelmBtn = btn('Center Helm (C)', 'hud-btn', () => {
+    const centerHelmBtn = btn(t.centerHelmBtn, 'hud-btn', () => {
       this.callbacks.onHelmChange(0);
     });
 
@@ -452,12 +458,13 @@ export class ControlsHud {
   }
 
   public setAutoPilotActive(active: boolean, statusLabel?: string): void {
-    this.autoPilotBtn.textContent = active ? '🤖 Auto-Pilot: ON (P)' : '🤖 Auto-Pilot: OFF (P)';
+    const t = getUiStrings();
+    this.autoPilotBtn.textContent = active ? t.autoPilotOnBtn : t.autoPilotOffBtn;
     this.autoPilotBtn.classList.toggle('active-toggle', active);
     if (active && statusLabel) {
       this.briefingEl.textContent = statusLabel;
     } else if (!active) {
-      this.briefingEl.textContent = this.currentStage.briefing;
+      this.briefingEl.textContent = getLocalizedStage(this.currentStage).briefing;
     }
   }
 
@@ -482,6 +489,7 @@ export class ControlsHud {
   }
 
   public updateTelemetry(snap: SimulationSnapshot, keyHighlights?: ActiveArrowHighlights): void {
+    const t = getUiStrings();
     this.scoreValEl.textContent = `${snap.liveScore}`;
     this.repairValEl.textContent = `$${snap.repairCostUsd.toLocaleString('en-US')}`;
     this.repairValEl.className =
@@ -491,14 +499,13 @@ export class ControlsHud {
           ? 'stat-value danger'
           : 'stat-value warn';
 
-    const dirPrefix = snap.telemetry.surgeKnots < -0.08 ? 'AST ' : '';
-    this.speedValEl.textContent = `${dirPrefix}${snap.telemetry.speedKnots.toFixed(1)} kn`;
+    const dirPrefix = snap.telemetry.surgeKnots < -0.08 ? t.asternPrefix : '';
+    this.speedValEl.textContent = `${dirPrefix}${snap.telemetry.speedKnots.toFixed(1)} ${t.knotsUnit}`;
 
     const gustKn = Math.round(snap.telemetry.windForceBody.effectiveKnots);
-    const compassDirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
     const compassIdx = Math.round(normalizeCompassDeg(snap.windFromDeg) / 45) % 8;
-    const shelterNote = snap.shelterFactor < 0.85 ? ' (Lee)' : '';
-    this.windValEl.textContent = `${gustKn} kn ${compassDirs[compassIdx]}${shelterNote}`;
+    const shelterNote = snap.shelterFactor < 0.85 ? t.leeNote : '';
+    this.windValEl.textContent = `${gustKn} ${t.knotsUnit} ${t.compassDirs[compassIdx]}${shelterNote}`;
 
     // Update Single vs. Twin Throttle Levers & Mode Toggle
     const isTwin = snap.vesselSpec.engineCount === 2;
@@ -513,14 +520,14 @@ export class ControlsHud {
 
     if (isTwin) {
       this.throttleLblEl.textContent = isSeparate
-        ? 'Twin Throttles: Split'
-        : 'Twin Throttles: Unified';
+        ? t.throttleTwinSplitLabel
+        : t.throttleTwinUnifiedLabel;
       this.throttleModeBtnEl.textContent = isSeparate
-        ? '⚡ Split (U) → Unified'
-        : '🔗 Unified (U) → Split';
+        ? t.modeSplitToUnifiedBtn
+        : t.modeUnifiedToSplitBtn;
       this.throttleModeBtnEl.classList.toggle('active-toggle', isSeparate);
     } else {
-      this.throttleLblEl.textContent = 'Throttle (↑/↓ · W/S)';
+      this.throttleLblEl.textContent = t.throttleSingleLabel;
     }
 
     const updateKnob = (knobEl: HTMLElement, val: number): void => {
@@ -539,7 +546,8 @@ export class ControlsHud {
     const hPct = (snap.controls.helm + 1) * 50;
     this.helmKnobEl.style.left = `${Math.max(12, Math.min(88, hPct))}%`;
     const deg = Math.round(snap.telemetry.helmAngleDeg);
-    this.helmKnobEl.textContent = deg === 0 ? '0°' : deg > 0 ? `${deg}°R` : `${Math.abs(deg)}°L`;
+    this.helmKnobEl.textContent =
+      deg === 0 ? '0°' : deg > 0 ? `${deg}°${t.helmRightSuffix}` : `${Math.abs(deg)}°${t.helmLeftSuffix}`;
 
     // Illuminate Arrow Key Caps live when pressed on keyboard
     if (keyHighlights) {
@@ -577,17 +585,19 @@ export class ControlsHud {
     const chk = snap.dockingChecklist;
     if (chk.nearBerth && !snap.completionReport && !snap.gameOver) {
       this.berthStatusEl.style.display = 'block';
-      const c1 = chk.inBerthZone ? '✓ In Slip' : '○ Enter Slip Box';
+      const c1 = chk.inBerthZone ? t.checklistInSlip : t.checklistEnterSlip;
+      const degErr = Math.round(chk.headingErrorDeg);
       const c2 = chk.headingAligned
-        ? `✓ Aligned (${Math.round(chk.headingErrorDeg)}°)`
-        : `○ Align <=32° (${Math.round(chk.headingErrorDeg)}°)`;
+        ? t.checklistAligned(degErr)
+        : t.checklistAlignTarget(degErr);
+      const knStr = chk.speedKnots.toFixed(1);
       const c3 = chk.speedStopped
-        ? `✓ Stopped (${chk.speedKnots.toFixed(1)} kn)`
-        : `○ Slow <=0.6 kn (${chk.speedKnots.toFixed(1)} kn)`;
+        ? t.checklistStopped(knStr)
+        : t.checklistSlowTarget(knStr);
 
       if (chk.readyToMoor) {
         const pct = Math.round(snap.dockingHoldProgress * 100);
-        this.berthStatusEl.textContent = `${c1} · ${c2} · ${c3} — Mooring ${pct}% (or Press M to Finish Now!)`;
+        this.berthStatusEl.textContent = `${c1} · ${c2} · ${c3} — ${t.checklistMooringHold(pct)}`;
         this.berthStatusEl.className = 'berth-checklist-pill ready';
       } else {
         this.berthStatusEl.textContent = `${c1} · ${c2} · ${c3}`;
@@ -599,19 +609,21 @@ export class ControlsHud {
 
     // Update Cleat Lasso / Instant Tie Mooring Lines & Finish Button State
     if (chk.readyToMoor && !snap.completionReport) {
-      this.lassoBtnEl.textContent = '⚓ Tie Lines & Finish! (M)';
+      this.lassoBtnEl.textContent = t.tieLinesFinishBtn;
       this.lassoBtnEl.classList.add('attached');
       this.lassoBtnEl.disabled = false;
     } else if (snap.activeSpringLine) {
-      this.lassoBtnEl.textContent = 'Cast Off Line (M)';
+      this.lassoBtnEl.textContent = t.castOffLineBtn;
       this.lassoBtnEl.classList.add('attached');
       this.lassoBtnEl.disabled = false;
     } else if (snap.nearestCleatCandidate) {
-      this.lassoBtnEl.textContent = `Lasso Cleat ${snap.nearestCleatCandidate.distM.toFixed(1)}m (M)`;
+      this.lassoBtnEl.textContent = t.lassoCleatDistBtn(
+        snap.nearestCleatCandidate.distM.toFixed(1)
+      );
       this.lassoBtnEl.classList.remove('attached');
       this.lassoBtnEl.disabled = false;
     } else {
-      this.lassoBtnEl.textContent = 'Cleat Out of Reach';
+      this.lassoBtnEl.textContent = t.cleatOutOfReachBtn;
       this.lassoBtnEl.classList.remove('attached');
       this.lassoBtnEl.disabled = true;
     }
@@ -622,6 +634,7 @@ export class ControlsHud {
       this.modalHostEl.replaceChildren();
       return;
     }
+    const t = getUiStrings();
     const backdrop = el('div', 'modal-backdrop');
     const card = el('div', 'modal-card');
 
@@ -629,22 +642,13 @@ export class ControlsHud {
     headerRow.style.justifyContent = 'space-between';
     headerRow.style.width = '100%';
     headerRow.append(
-      el('h2', 'app-title', 'Controls & Marina Docking Guide'),
-      btn('Close (Esc)', 'hud-btn', () => this.modalHostEl.replaceChildren())
+      el('h2', 'app-title', t.helpModalTitle),
+      btn(t.closeEscBtn, 'hud-btn', () => this.modalHostEl.replaceChildren())
     );
 
     const grid = el('div', 'help-grid');
-    const items: Array<[string, string]> = [
-      ['↑ / ↓  or  W / S', 'Adjust Throttle Ahead / Astern (pauses safely on Neutral when crossing 0%).'],
-      ['U (Twin-Engine Boats)', 'Toggle between Unified (linked levers) and Split (separate Port W/S & Starboard ↑/↓ or I/K throttles).'],
-      ['← / →  or  A / D', 'Steer Helm Port / Starboard (tap for 5° nudge, hold to sweep wheel).'],
-      ['Space  ·  C', 'Space cuts all Throttles to Neutral immediately; C centers Helm to 0°.'],
-      ['Q / E (8m Cruiser)', 'Fire Proportional Bow Thruster Port (Q) or Starboard (E) to walk sideways.'],
-      ['Finish & Next Stage', 'Stop (< 0.65 kn) aligned inside the dashed slip for 2.5s OR press M to tie lines & finish immediately!'],
-      ['Bow / Mid / Aft Fenders', 'Slide your 2 Port & 2 Starboard fenders to shield bow stems or quarters from yacht scrapes!'],
-    ];
 
-    for (const [keys, desc] of items) {
+    for (const [keys, desc] of t.helpItems) {
       const box = el('div', 'help-item');
       box.append(el('strong', '', keys), el('span', 'stat-label', desc));
       grid.append(box);
@@ -658,27 +662,29 @@ export class ControlsHud {
   public openSetupModal(): void {
     this.activeScorecardNextAction = null;
     this.modalHostEl.replaceChildren();
+    const t = getUiStrings();
     const backdrop = el('div', 'modal-backdrop');
     const card = el('div', 'modal-card');
 
     const headerRow = el('div', 'brand-group');
     headerRow.style.justifyContent = 'space-between';
     headerRow.style.width = '100%';
-    const heading = el('h2', 'app-title', 'Skipper License Campaign & Wind Sandbox');
-    const closeBtn = btn('Close', 'hud-btn', () => this.modalHostEl.replaceChildren());
+    const heading = el('h2', 'app-title', t.setupModalTitle);
+    const closeBtn = btn(t.closeBtn, 'hud-btn', () => this.modalHostEl.replaceChildren());
     headerRow.append(heading, closeBtn);
 
     const saved = loadSavedProgress();
     const grid = el('div', 'stage-grid');
     for (const st of CAMPAIGN_STAGES) {
+      const locSt = getLocalizedStage(st);
       const item = el(
         'button',
         st.id === this.currentStage.id ? 'stage-item-btn selected' : 'stage-item-btn'
       );
       const best = saved[st.id];
-      const badgeStr = best ? ` [${best.rank} · ${best.score} pts]` : '';
-      const topLine = el('strong', '', `${st.title}${badgeStr}`);
-      const subLine = el('span', 'stat-label', st.subtitle);
+      const badgeStr = best ? ` [${best.rank} · ${best.score} ${t.ptsUnit}]` : '';
+      const topLine = el('strong', '', `${locSt.title}${badgeStr}`);
+      const subLine = el('span', 'stat-label', locSt.subtitle);
       item.append(topLine, subLine);
       item.addEventListener('click', () => {
         item.blur();
@@ -690,31 +696,32 @@ export class ControlsHud {
     }
 
     // Custom Free Practice Sandbox Box (Any Boat + Wind 0..25 kn + Wind Direction 0..359 deg)
-    const sandboxTitle = el('h3', 'app-title', 'Custom Wind & Vessel Sandbox (0–25 Knots)');
+    const sandboxTitle = el('h3', 'app-title', t.sandboxTitle);
     const sbGrid = el('div', 'sandbox-controls-grid');
 
     const vesselSelect = document.createElement('select');
     vesselSelect.className = 'hud-btn';
     for (const v of Object.values(VESSEL_SPECS)) {
+      const locV = getLocalizedVessel(v);
       const opt = document.createElement('option');
       opt.value = v.id;
-      opt.textContent = v.name;
+      opt.textContent = locV.name;
       if (v.id === this.currentStage.vesselId) opt.selected = true;
       vesselSelect.append(opt);
     }
 
     const berthSelect = document.createElement('select');
     berthSelect.className = 'hud-btn';
-    for (const [bId, bLabel] of [
-      ['slip-a-bow', 'North Slip A (Alongside Finger Pier)'],
-      ['slip-b-tight', 'North Slip B — Beside Yacht'],
-      ['east-seawall', 'East Seawall Parallel'],
-      ['south-med-stern', 'South Med Stern-In'],
-      ['south-east-spring', 'South-East Spring Berth'],
-    ]) {
+    for (const bId of [
+      'slip-a-bow',
+      'slip-b-tight',
+      'east-seawall',
+      'south-med-stern',
+      'south-east-spring',
+    ] as const) {
       const opt = document.createElement('option');
       opt.value = bId;
-      opt.textContent = bLabel;
+      opt.textContent = t.berthOptions[bId] ?? bId;
       if (bId === this.currentStage.berthId) opt.selected = true;
       berthSelect.append(opt);
     }
@@ -724,9 +731,9 @@ export class ControlsHud {
     windSpeedInput.min = '0';
     windSpeedInput.max = '25';
     windSpeedInput.value = String(this.currentStage.trueWindKnots);
-    const windSpeedVal = el('span', 'stat-value warn', `${windSpeedInput.value} knots`);
+    const windSpeedVal = el('span', 'stat-value warn', t.knotsValueLabel(windSpeedInput.value));
     windSpeedInput.addEventListener('input', () => {
-      windSpeedVal.textContent = `${windSpeedInput.value} knots`;
+      windSpeedVal.textContent = getUiStrings().knotsValueLabel(windSpeedInput.value);
     });
 
     const windDirInput = document.createElement('input');
@@ -745,20 +752,22 @@ export class ControlsHud {
     trafficCheck.checked = this.currentStage.enableTraffic;
 
     sbGrid.append(
-      fieldWrap('Vessel Type', vesselSelect),
-      fieldWrap('Target Marina Berth', berthSelect),
-      fieldWrap('Wind Speed (0–25 kn)', windSpeedInput, windSpeedVal),
-      fieldWrap('Wind From Direction (0°–355°)', windDirInput, windDirVal)
+      fieldWrap(t.vesselTypeField, vesselSelect),
+      fieldWrap(t.targetBerthField, berthSelect),
+      fieldWrap(t.windSpeedField, windSpeedInput, windSpeedVal),
+      fieldWrap(t.windDirField, windDirInput, windDirVal)
     );
 
-    const launchSandboxBtn = btn('Launch Custom Sandbox Session', 'hud-btn primary', () => {
+    const launchSandboxBtn = btn(t.launchSandboxBtn, 'hud-btn primary', () => {
       const vId = sanitizeVesselId(vesselSelect.value);
       const bId = berthSelect.value;
       const wKn = clampWindKnots(Number(windSpeedInput.value));
       const wDeg = normalizeCompassDeg(Number(windDirInput.value));
+      const locV = getLocalizedVessel(VESSEL_SPECS[vId]);
+      const s = getUiStrings();
       this.setCurrentStageMeta(
-        `Sandbox: ${VESSEL_SPECS[vId].shortName}`,
-        `${VESSEL_SPECS[vId].tip}`
+        `${s.sandboxStagePrefix}: ${locV.shortName}`,
+        `${locV.tip}`
       );
       this.modalHostEl.replaceChildren();
       this.callbacks.onApplySandboxConfig({
@@ -794,25 +803,34 @@ export class ControlsHud {
     saveStageCompletion(this.currentStage.id, report.rank, report.finalScore);
     this.modalHostEl.replaceChildren();
     this.activeScorecardNextAction = null;
+    const t = getUiStrings();
 
     const backdrop = el('div', 'modal-backdrop');
     const card = el('div', 'modal-card');
 
+    const localizedRankTitle = t.rankTitles[report.rank] ?? report.rankTitle;
     const title = el(
       'h2',
       'app-title',
-      `Rank ${report.rank} — ${report.rankTitle} (${report.finalScore} pts)`
+      t.rankModalTitle(report.rank, localizedRankTitle, report.finalScore)
     );
     const sub = el(
       'div',
       'stat-label',
-      `Alignment +${report.alignmentBonus} · Clean Hull +${report.cleanHullBonus} · Fender Kiss +${report.butterKissBonus} · Wind Multiplier ${report.windMultiplier}x · Repair Bill $${report.totalRepairCostUsd.toLocaleString('en-US')}`
+      t.rankModalBreakdown(
+        report.alignmentBonus,
+        report.cleanHullBonus,
+        report.butterKissBonus,
+        report.windMultiplier,
+        report.totalRepairCostUsd.toLocaleString('en-US')
+      )
     );
 
     const actionRow = el('div', 'top-actions');
     const nextIdx = CAMPAIGN_STAGES.findIndex((s) => s.id === this.currentStage.id) + 1;
     if (nextIdx > 0 && nextIdx < CAMPAIGN_STAGES.length) {
       const nextStage = CAMPAIGN_STAGES[nextIdx];
+      const locNext = getLocalizedStage(nextStage);
       const goNext = () => {
         this.activeScorecardNextAction = null;
         this.currentStage = nextStage;
@@ -820,16 +838,16 @@ export class ControlsHud {
         this.callbacks.onSelectCampaignStage(nextStage);
       };
       this.activeScorecardNextAction = goNext;
-      const nextBtn = btn(`Next: ${nextStage.title} (Enter) ➔`, 'hud-btn primary', goNext);
+      const nextBtn = btn(t.nextStageBtn(locNext.title), 'hud-btn primary', goNext);
       actionRow.append(nextBtn);
     }
 
-    const replayBtn = btn('Replay Stage (R)', 'hud-btn', () => {
+    const replayBtn = btn(t.replayStageBtn, 'hud-btn', () => {
       this.activeScorecardNextAction = null;
       this.modalHostEl.replaceChildren();
       this.callbacks.onResetStage();
     });
-    const chooseBtn = btn('All Stages', 'hud-btn', () => this.openSetupModal());
+    const chooseBtn = btn(t.allStagesBtn, 'hud-btn', () => this.openSetupModal());
     actionRow.append(replayBtn, chooseBtn);
 
     card.append(title, sub, actionRow);
@@ -843,24 +861,18 @@ export class ControlsHud {
   ): void {
     this.modalHostEl.replaceChildren();
     this.activeScorecardNextAction = null;
+    const t = getUiStrings();
+    const repairStr = repairCostUsd.toLocaleString('en-US');
 
     const backdrop = el('div', 'modal-backdrop');
     const card = el('div', 'modal-card');
     card.style.borderColor = 'var(--accent-coral)';
 
-    const title = el(
-      'h2',
-      'app-title',
-      `💥 GAME OVER — Damage Over $10,000 ($${repairCostUsd.toLocaleString('en-US')})`
-    );
+    const title = el('h2', 'app-title', t.gameOverTitle(repairStr));
     title.style.color = 'var(--accent-coral)';
 
-    const latestCause = incidents[0] ? `Latest impact: ${incidents[0].label}. ` : '';
-    const sub = el(
-      'div',
-      'stat-label',
-      `${latestCause}Cumulative vessel hull & neighbor damage reached $${repairCostUsd.toLocaleString('en-US')}, exceeding the $10,000 marina insurance limit.`
-    );
+    const latestCause = incidents[0] ? t.gameOverLatestImpact(incidents[0].label) : '';
+    const sub = el('div', 'stat-label', t.gameOverSummary(latestCause, repairStr));
 
     const retryNow = () => {
       this.activeScorecardNextAction = null;
@@ -870,8 +882,8 @@ export class ControlsHud {
     this.activeScorecardNextAction = retryNow;
 
     const actionRow = el('div', 'top-actions');
-    const retryBtn = btn('↻ Retry Stage (Enter / R)', 'hud-btn primary', retryNow);
-    const chooseBtn = btn('Stages / Wind', 'hud-btn', () => this.openSetupModal());
+    const retryBtn = btn(t.retryStageEnterBtn, 'hud-btn primary', retryNow);
+    const chooseBtn = btn(t.stagesWindBtn, 'hud-btn', () => this.openSetupModal());
     actionRow.append(retryBtn, chooseBtn);
 
     card.append(title, sub, actionRow);

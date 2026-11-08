@@ -7,8 +7,10 @@ import { ControlsHud } from './ui/controlsHud';
 import { KeyboardController, stepThrottleWithNeutralDetent } from './input/keyboardController';
 import { clamp } from './physics/hydrodynamics';
 import { SkipperClassifier } from './ai/skipperClassifier';
+import { getLocalizedStage, initLangFromUrl } from './i18n';
 
 async function bootstrap(): Promise<void> {
+  initLangFromUrl();
   const root = document.getElementById('app-root');
   if (!root) return;
 
@@ -56,7 +58,8 @@ async function bootstrap(): Promise<void> {
       gustiness: stage.gustiness,
       enableTraffic: stage.enableTraffic,
     });
-    hud.setCurrentStageMeta(stage.title, stage.briefing, stage);
+    const locStage = getLocalizedStage(stage);
+    hud.setCurrentStageMeta(locStage.title, locStage.briefing, stage);
     if (autoPilotActive) {
       hud.setAutoPilotActive(true);
     }

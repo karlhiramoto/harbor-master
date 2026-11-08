@@ -1,3 +1,5 @@
+import { getUiStrings, translateColliderLabel } from '../i18n';
+
 export type ColliderKind =
   | 'bare-hull'
   | 'boat-fender'
@@ -106,6 +108,8 @@ export class DockingScorer {
   public evaluateContact(nowSec: number, sample: ContactSample): ScoreIncident | null {
     const { playerKind, otherKind, otherLabel, impactSpeedKnots, worldX, worldY, dtSec } = sample;
     const isNeighborBoat = otherKind === 'moored-hull' || otherKind === 'moored-fender';
+    const t = getUiStrings();
+    const displayOther = translateColliderLabel(otherLabel);
 
     // Case 1: BARE HULL touching MOORED NEIGHBOR BOAT (missed our 2 side fenders!)
     if (playerKind === 'bare-hull' && isNeighborBoat) {
@@ -129,7 +133,7 @@ export class DockingScorer {
           id: this.nextIncidentId++,
           timeSec: nowSec,
           kind: 'bare-hull-moored-scrape',
-          label: `GELCOAT SCRAPE vs ${otherLabel} (Missed Fenders!)`,
+          label: t.incidentGelcoatScrape(displayOther),
           deltaPoints: -burstPenalty,
           repairCostUsd: burstUsd,
           worldX,
@@ -170,8 +174,8 @@ export class DockingScorer {
           kind: otherKind === 'hazard' ? 'hazard-bump' : 'bare-hull-dock-scrape',
           label:
             otherKind === 'hazard'
-              ? `FAIRWAY HAZARD IMPACT (${otherLabel})`
-              : `Bare Hull Scrape on ${otherLabel} (Align Fenders!)`,
+              ? t.incidentFairwayHazard(displayOther)
+              : t.incidentBareHullDock(displayOther),
           deltaPoints: -burstPenalty,
           repairCostUsd: burstUsd,
           worldX,
@@ -207,8 +211,8 @@ export class DockingScorer {
         kind: 'fender-butter-kiss',
         label:
           bonus > 0
-            ? `BUTTER FENDER KISS on ${otherLabel} (+${bonus} pts)`
-            : `Clean Fender Cushion on ${otherLabel} ($0 Damage)`,
+            ? t.incidentButterKiss(displayOther, bonus)
+            : t.incidentCleanCushion(displayOther),
         deltaPoints: bonus,
         repairCostUsd: 0,
         worldX,
@@ -230,7 +234,7 @@ export class DockingScorer {
       id: this.nextIncidentId++,
       timeSec: nowSec,
       kind: 'fender-hard-bump',
-      label: `Hard Fender Bump (${impactSpeedKnots.toFixed(1)} kn vs ${otherLabel})`,
+      label: t.incidentHardFender(impactSpeedKnots.toFixed(1), displayOther),
       deltaPoints: -hardPenalty,
       repairCostUsd: hardUsd,
       worldX,
@@ -247,6 +251,7 @@ export class DockingScorer {
     trueWindKnots: number;
     elapsedSec: number;
   }): BerthCompletionReport {
+    const t = getUiStrings();
     const posScore = Math.max(0, 1 - params.distanceErrorM / 2.2);
     const angleScore = Math.max(0, 1 - params.headingErrorDeg / 18);
     const alignmentBonus = Math.round(250 * (0.6 * posScore + 0.4 * angleScore));
@@ -261,20 +266,16 @@ export class DockingScorer {
     const finalScore = Math.round(rawNet * windMultiplier);
 
     let rank: BerthCompletionReport['rank'] = 'D';
-    let rankTitle = 'Gelcoat Liability';
     if (finalScore >= 1350 && this.bareHullScrapesCount === 0) {
       rank = 'S';
-      rankTitle = 'Master Harbor Pilot';
     } else if (finalScore >= 1050 && this.bareHullScrapesCount === 0) {
       rank = 'A';
-      rankTitle = 'Seasoned Skipper';
     } else if (finalScore >= 800) {
       rank = 'B';
-      rankTitle = 'Competent Helmsman';
     } else if (finalScore >= 500) {
       rank = 'C';
-      rankTitle = 'Weekend Deckhand';
     }
+    const rankTitle = t.rankTitles[rank];
 
     return {
       completed: true,
