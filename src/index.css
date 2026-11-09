@@ -586,46 +586,46 @@ body,
 @media (max-width: 768px) and (orientation: portrait),
   ((max-width: 900px) and (orientation: portrait)) {
   .sim-shell {
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, 104px) minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr) auto auto;
     grid-template-areas:
       'top      top'
       'viewport viewport'
       'utility  utility'
       'throttle helm';
-    gap: 6px 8px;
-    padding-bottom: max(8px, env(safe-area-inset-bottom, 0px));
+    gap: 4px 6px;
+    padding-bottom: max(4px, env(safe-area-inset-bottom, 0px));
   }
 
   .hud-top-bar {
-    padding: calc(6px + env(safe-area-inset-top, 0px)) 10px 6px 10px;
-    gap: 5px;
+    padding: calc(4px + env(safe-area-inset-top, 0px)) 8px 4px 8px;
+    gap: 4px;
   }
 
   .app-title {
-    font-size: 0.85rem;
+    font-size: 0.8rem;
   }
 
   .stage-tag {
-    font-size: 0.7rem;
-    padding: 2px 7px;
-  }
-
-  .telemetry-strip {
-    gap: 5px;
-  }
-
-  .stat-chip {
-    min-width: 56px;
+    font-size: 0.66rem;
     padding: 2px 6px;
   }
 
+  .telemetry-strip {
+    gap: 4px;
+  }
+
+  .stat-chip {
+    min-width: 50px;
+    padding: 2px 5px;
+  }
+
   .stat-label {
-    font-size: 0.56rem;
+    font-size: 0.54rem;
   }
 
   .stat-value {
-    font-size: 0.78rem;
+    font-size: 0.74rem;
   }
 
   .top-actions {
@@ -634,67 +634,89 @@ body,
   }
 
   .top-actions .hud-btn {
-    padding: 4px 8px;
-    font-size: 0.72rem;
+    padding: 3px 6px;
+    font-size: 0.68rem;
   }
 
   .hud-banner-zone {
-    top: 6px;
-    gap: 4px;
+    top: 4px;
+    gap: 3px;
   }
 
   .briefing-bar {
-    font-size: 0.68rem;
-    padding: 3px 9px;
+    font-size: 0.62rem;
+    line-height: 1.25;
+    padding: 2px 8px;
+    border-radius: 8px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 
   .berth-checklist-pill {
-    font-size: 0.66rem;
-    padding: 3px 9px;
+    font-size: 0.64rem;
+    padding: 2px 8px;
   }
 
   .center-utility-bar {
     justify-self: stretch;
-    margin: 0 max(8px, env(safe-area-inset-right, 0px)) 0 max(8px, env(safe-area-inset-left, 0px));
-    padding: 4px 8px;
+    margin: 0 max(6px, env(safe-area-inset-right, 0px)) 0 max(6px, env(safe-area-inset-left, 0px));
+    padding: 3px 6px;
     gap: 4px;
   }
 
   .center-utility-bar .hud-btn {
-    padding: 4px 8px;
-    font-size: 0.72rem;
+    padding: 3px 6px;
+    font-size: 0.68rem;
   }
 
   .throttle-card {
-    margin-left: max(8px, env(safe-area-inset-left, 0px));
+    justify-self: stretch;
+    margin-left: max(6px, env(safe-area-inset-left, 0px));
     min-width: 0;
-    padding: 6px 8px;
-    gap: 5px;
+    padding: 5px 6px;
+    gap: 4px;
+  }
+
+  .throttle-card .stat-label {
+    font-size: 0.52rem;
+    text-align: center;
+    white-space: normal;
+    line-height: 1.1;
   }
 
   .throttle-track {
-    width: 40px;
-    height: 86px;
+    width: 34px;
+    height: 64px;
   }
 
   .throttle-card .hud-btn {
-    padding: 4px 7px;
-    font-size: 0.68rem;
-    white-space: nowrap;
+    padding: 3px 4px;
+    font-size: 0.6rem;
+    line-height: 1.1;
+    white-space: normal;
+    text-align: center;
+  }
+
+  .key-cap-btn {
+    min-width: 24px;
+    height: 22px;
+    font-size: 0.66rem;
   }
 
   .helm-cluster {
     justify-self: stretch;
-    margin-right: max(8px, env(safe-area-inset-right, 0px));
+    margin-right: max(6px, env(safe-area-inset-right, 0px));
     min-width: 0;
     width: auto;
-    padding: 6px 9px;
-    gap: 5px;
+    padding: 5px 6px;
+    gap: 4px;
   }
 
   .thruster-btn {
-    padding: 5px 4px;
-    font-size: 0.66rem;
+    padding: 4px 4px;
+    font-size: 0.64rem;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -702,19 +724,19 @@ body,
 
   .helm-row-with-keys {
     width: 100%;
-    gap: 5px;
+    gap: 4px;
   }
 
   .helm-slider-track {
     flex: 1;
     width: auto;
-    min-width: 76px;
-    height: 40px;
+    min-width: 60px;
+    height: 34px;
   }
 
   .helm-cluster .hud-btn {
-    padding: 4px 9px;
-    font-size: 0.72rem;
+    padding: 3px 8px;
+    font-size: 0.68rem;
   }
 }
 
