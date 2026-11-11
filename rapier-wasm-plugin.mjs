@@ -15,15 +15,36 @@ const RAPIER_BUNDLE = '/@dimforge/rapier2d-compat/dist/rapier.mjs';
  * WASM on its own and caches it independently of the game code.
  *
  * Build-only: dev and Vitest keep the inline copy. If a Rapier upgrade changes
- * the bundle shape, the build fails instead of silently shipping the inline copy.
+ * the bundle shape or file name, the build fails instead of silently shipping
+ * the inline copy.
+ *
+ * The returned `map: null` is only accurate while sourcemaps stay disabled
+ * (both build configs set `sourcemap: false`); enable them and this needs a
+ * real map (e.g. MagicString) because the rewrite shifts columns on one line.
  */
 export function rapierWasmFile() {
+  let rapierSeen = false;
+  let rewritten = false;
   return {
     name: 'rapier-wasm-file',
     apply: 'build',
+    buildStart() {
+      rapierSeen = false;
+      rewritten = false;
+    },
+    buildEnd(error) {
+      if (!error && rapierSeen && !rewritten) {
+        throw new Error(
+          `[rapier-wasm-file] @dimforge/rapier2d-compat was bundled but ${RAPIER_BUNDLE} was never rewritten; ` +
+            'the inline 3 MB WASM would ship. Update harbor-master/rapier-wasm-plugin.mjs.',
+        );
+      }
+    },
     transform(code, id) {
       const file = id.split('?')[0];
-      if (!file.replace(/\\/g, '/').endsWith(RAPIER_BUNDLE)) return null;
+      const normalized = file.replace(/\\/g, '/');
+      if (normalized.includes('/@dimforge/rapier2d-compat/')) rapierSeen = true;
+      if (!normalized.endsWith(RAPIER_BUNDLE)) return null;
 
       const wasm = readFileSync(path.join(path.dirname(file), 'rapier_wasm2d_bg.wasm'));
       const literal = `"${wasm.toString('base64')}"`;
@@ -45,6 +66,7 @@ export function rapierWasmFile() {
         fail('unexpected code around the inlined WASM');
       }
 
+      rewritten = true;
       const ref = this.emitFile({ type: 'asset', name: 'rapier_wasm2d_bg.wasm', source: wasm });
       const from = start - head[0].length;
       const to = start + literal.length + tail.length;
