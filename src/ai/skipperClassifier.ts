@@ -826,7 +826,11 @@ export class SkipperClassifier {
         softHelm = -1.0;
       } else if (
         snap.telemetry.surgeKnots <=
-        (isGaleBacking ? -1.05 : hErr < -0.04 ? -0.42 : -0.72)
+          (isGaleBacking ? -1.05 : hErr < -0.04 ? -0.42 : -0.72) &&
+        // In a gale, a bow overshot Counter-Clockwise (hErr > +0.20) cannot be recovered by the
+        // rudder alone while gliding in Neutral: the crosswind sets the stern East onto the
+        // Med Berth East Piling. Keep reversing so right-hand prop walk swings the bow back.
+        !(isGaleBacking && hErr > 0.2)
       ) {
         // Glide on established sternway in Neutral so prop walk is zero and rudder steers cleanly!
         softThrottle = 0;
