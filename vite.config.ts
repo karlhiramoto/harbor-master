@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitest/config';
+import { rapierWasmFile } from './rapier-wasm-plugin.mjs';
 
 // TODO(security): Pure client-side static simulation app (no backend DB, user accounts, or file uploads).
 // Dev and preview servers are bound strictly to 127.0.0.1 with strict security headers.
@@ -13,6 +14,7 @@ const securityHeaders = {
 
 export default defineConfig({
   base: './',
+  plugins: [rapierWasmFile()],
   server: {
     host: '127.0.0.1',
     port: 5173,
